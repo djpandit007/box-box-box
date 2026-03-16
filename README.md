@@ -17,17 +17,17 @@ OpenF1 has no live commentary text feed. Instead, we **synthesize narrative** fr
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|-----------|
-| Language | Python 3.12+ |
-| Data Source | [OpenF1 API](https://openf1.org) |
-| Database | PostgreSQL 16 + pgvector |
-| LLM | [OpenRouter](https://openrouter.ai) via [PydanticAI](https://ai.pydantic.dev) |
-| Speech-to-Text | Groq Whisper |
-| Text-to-Speech | Deepgram Aura |
-| Frontend | Pyodide (Python in WebAssembly) |
-| Secrets | [dotenvx](https://dotenvx.com) |
-| Orchestration | asyncio (Temporal migration path available) |
+| Component      | Technology                                                                    |
+| -------------- | ----------------------------------------------------------------------------- |
+| Language       | Python 3.12+                                                                  |
+| Data Source    | [OpenF1 API](https://openf1.org)                                              |
+| Database       | PostgreSQL 16 + pgvector                                                      |
+| LLM            | [OpenRouter](https://openrouter.ai) via [PydanticAI](https://ai.pydantic.dev) |
+| Speech-to-Text | Groq Whisper                                                                  |
+| Text-to-Speech | Deepgram Aura                                                                 |
+| Frontend       | Pyodide (Python in WebAssembly)                                               |
+| Secrets        | [dotenvx](https://dotenvx.com)                                                |
+| Web Framework  | [FastAPI](https://fastapi.tiangolo.com) (REST API + WebSocket)                |
 
 ## Project Structure
 
@@ -69,6 +69,7 @@ box-box-box/
 ## Build Phases
 
 ### Phase 1: Foundation — Project Setup + Data Ingestion
+
 - [ ] Project scaffolding (`pyproject.toml`, `config.py`, `docker-compose.yml`)
 - [ ] Database schema & Alembic migrations
 - [ ] OpenF1 API client with rate limiting (30 req/min budget)
@@ -76,34 +77,73 @@ box-box-box/
 - [ ] Test fixtures from historical session data
 
 ### Phase 2: Summarisation Engine (MVP)
+
 - [ ] XML-tagged prompt builder (events grouped by type, previous summary for continuity)
 - [ ] 60-second summarisation loop via PydanticAI + OpenRouter
 - [ ] pgvector embeddings for semantic search
+- [ ] Post-race digest — final LLM call with all summaries as context to generate a shareable race report
 
 > **After Phase 2, we have a working product**: run the app, it polls OpenF1, and every 60s prints a narrative race summary.
 
 ### Phase 3: Audio Pipeline
+
 - [ ] Team radio MP3 download + Groq Whisper transcription
+- [ ] Team radio mood tagging — LLM classification per clip (frustrated, celebratory, strategic, funny)
 - [ ] Text-to-speech output via Deepgram Aura
 
-### Phase 4: Delivery Layer
+### Phase 4: Derived Intelligence + Delivery
+
 - [ ] WebSocket server for real-time push
 - [ ] REST API endpoints (sessions, summaries, semantic search, standings)
+- [ ] Battle detector — flag when two drivers' interval drops below ~1.5s and holds; resolve via `/overtakes`
+- [ ] Weather alerts — monitor `/weather` rainfall transitions (0→1) and trigger push notifications
+- [ ] Gap delta computation — track interval changes over time (closing/opening) for leaderboard enrichment
 
-### Phase 5: Frontend
-- [ ] Pyodide/WASM dashboard with live summary feed
-- [ ] Standings table, radio transcript feed, semantic search
+### Phase 5: Frontend (Pyodide/WASM)
+
+- [ ] Live leaderboard with gap deltas and sparkline trend charts (computed client-side)
+- [ ] Tyre strategy view — horizontal bars per driver showing compound + tyre age
+- [ ] Race control ticker — scrollable raw `/race_control` message feed
+- [ ] Team radio player — driver avatar, transcript, play button, mood tags
+- [ ] Battle highlights in the narrative timeline
+- [ ] Driver focus mode — filter summaries, radio, and gap charts to a selected driver
+- [ ] Weather radar — ambient dry/damp/wet indicator
+
+## Features
+
+### Core — the reason you open the app
+
+- **Race narrative timeline** — LLM-generated summaries every 60 seconds, weaving race events into a commentator-style narrative with continuity between updates
+- **Audio commentary** — TTS conversion of each summary so you can listen instead of read
+
+### Essential context — always visible alongside summaries
+
+- **Live leaderboard** (`/position` + `/intervals`) — real-time driver positions with gap deltas showing whether intervals are closing or opening. A gap of 1.2s that was 3.4s two minutes ago tells you there's a battle brewing — the static number alone doesn't.
+- **Tyre strategy view** (`/stints` + `/pit`) — horizontal bars per driver showing compound and tyre age (like F1 TV graphics). At a glance: who's on ancient hards and about to pit, completely changing the context of the narrative.
+- **Race control feed** (`/race_control`) — raw messages in a scrollable ticker. Flags, penalties, track limits, DRS zones. The "breaking news" channel alongside the summarised narrative.
+
+### Rich features — what makes this better than a text thread
+
+- **Team radio player** (`/team_radio` + STT) — card per clip with driver avatar (from `/drivers` `headshot_url`), transcript text, and a play button for the original MP3. LLM-tagged by mood/category (frustrated, celebratory, strategic, funny). Team radio is the most shared content from any race.
+- **Battle detector** (`/intervals` + `/overtakes`) — when two drivers' interval drops below ~1.5s and holds, flag it as an active battle with special visual treatment and more frequent summary triggers. `/overtakes` confirms resolution. This answers: "should I go watch this live right now?"
+- **Gap trend charts** (`/intervals` over time) — sparklines next to each driver in the leaderboard. A converging line tells you a story at a glance that no text can match. Computed client-side in Pyodide/WASM — just array math on cached interval data.
+- **Weather radar** (`/weather`) — ambient indicator (dry/damp/wet) updated every minute. Rain is F1's single biggest drama catalyst. Push notification when rainfall transitions from 0 to 1.
+
+### Engagement — what makes someone open this again next race
+
+- **Driver focus mode** — pick "your" driver and filter everything: summaries mentioning that driver, radio from that team only, gap chart relative to their position. Personalisation turns a tool into *your* tool.
+- **Post-race digest** — after the session ends, one final LLM call with all summaries as context generates a 2-3 paragraph race report. Stored, shareable — the thing someone sends to their WhatsApp group.
 
 ## Polling Strategy
 
 Stays within the free tier limit of 30 req/min:
 
-| Priority | Endpoints | Frequency | Requests/min |
-|----------|-----------|-----------|-------------|
-| P1 (critical) | `race_control`, `pit`, `overtakes` | Every 10s | 18 |
-| P2 (important) | `position`, `intervals` | Every 30s | 4 |
-| P3 (background) | `laps`, `weather`, `stints`, `team_radio` | Every 60s | 4 |
-| **Total** | | | **~26** |
+| Priority        | Endpoints                                 | Frequency | Requests/min |
+| --------------- | ----------------------------------------- | --------- | ------------ |
+| P1 (critical)   | `race_control`, `pit`, `overtakes`        | Every 10s | 18           |
+| P2 (important)  | `position`, `intervals`                   | Every 30s | 4            |
+| P3 (background) | `laps`, `weather`, `stints`, `team_radio` | Every 60s | 4            |
+| **Total**       |                                           |           | **~26**      |
 
 ## Quick Start
 
@@ -147,20 +187,21 @@ dotenvx set DEEPGRAM_API_KEY "..."
 ```
 
 This creates:
+
 - `.env` — encrypted values (safe to commit)
 - `.env.keys` — decryption keys (**never commit this**)
 
 ### Required variables
 
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | Postgres connection string (asyncpg) |
-| `OPENROUTER_API_KEY` | LLM API key via OpenRouter |
-| `GROQ_API_KEY` | Groq Whisper for team radio transcription |
-| `DEEPGRAM_API_KEY` | Deepgram Aura for TTS |
-| `OPENF1_BASE_URL` | OpenF1 API base (default: `https://api.openf1.org/v1`) |
-| `POLL_INTERVAL_SECONDS` | Polling frequency (default: `10`) |
-| `SUMMARY_INTERVAL_SECONDS` | Summary generation interval (default: `60`) |
+| Variable                   | Description                                            |
+| -------------------------- | ------------------------------------------------------ |
+| `DATABASE_URL`             | Postgres connection string (asyncpg)                   |
+| `OPENROUTER_API_KEY`       | LLM API key via OpenRouter                             |
+| `GROQ_API_KEY`             | Groq Whisper for team radio transcription              |
+| `DEEPGRAM_API_KEY`         | Deepgram Aura for TTS                                  |
+| `OPENF1_BASE_URL`          | OpenF1 API base (default: `https://api.openf1.org/v1`) |
+| `POLL_INTERVAL_SECONDS`    | Polling frequency (default: `10`)                      |
+| `SUMMARY_INTERVAL_SECONDS` | Summary generation interval (default: `60`)            |
 
 ## Future Ideas
 
