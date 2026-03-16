@@ -135,7 +135,8 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+# .env is committed (encrypted by dotenvx)
+.env.keys
 .envrc
 .venv
 env/
