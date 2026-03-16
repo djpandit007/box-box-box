@@ -134,6 +134,9 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Test fixtures (regenerate via: uv run python scripts/snapshot_session.py)
+tests/fixtures/
+
 # Environments
 # .env is committed (encrypted by dotenvx)
 .env.keys

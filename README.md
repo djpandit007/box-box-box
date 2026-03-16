@@ -70,11 +70,11 @@ box-box-box/
 
 ### Phase 1: Foundation — Project Setup + Data Ingestion
 
-- [ ] Project scaffolding (`pyproject.toml`, `config.py`, `docker-compose.yml`)
-- [ ] Database schema & Alembic migrations
-- [ ] OpenF1 API client with rate limiting (30 req/min budget)
-- [ ] Priority-based polling orchestrator
-- [ ] Test fixtures from historical session data
+- [x] Project scaffolding (`pyproject.toml`, `config.py`, `docker-compose.yml`)
+- [x] Database schema & Alembic migrations
+- [x] OpenF1 API client with rate limiting (30 req/min budget)
+- [x] Priority-based polling orchestrator
+- [x] Test fixtures from historical session data
 
 ### Phase 2: Summarisation Engine (MVP)
 
@@ -152,7 +152,6 @@ Stays within the free tier limit of 30 req/min:
 curl -sfS https://dotenvx.sh/install.sh | sh
 
 # Set secrets (first time only)
-dotenvx set DATABASE_URL "postgresql+asyncpg://boxboxbox:boxboxbox@localhost:5432/boxboxbox"
 dotenvx set OPENROUTER_API_KEY "your-key"
 
 # Start Postgres
@@ -180,7 +179,6 @@ Secrets are encrypted at rest — only `.env.keys` (gitignored) holds decryption
 curl -sfS https://dotenvx.sh/install.sh | sh
 
 # Set your secrets (encrypts automatically)
-dotenvx set DATABASE_URL "postgresql+asyncpg://user:pass@localhost:5432/boxboxbox"
 dotenvx set OPENROUTER_API_KEY "sk-or-..."
 dotenvx set GROQ_API_KEY "gsk_..."
 dotenvx set DEEPGRAM_API_KEY "..."
@@ -195,7 +193,6 @@ This creates:
 
 | Variable                   | Description                                            |
 | -------------------------- | ------------------------------------------------------ |
-| `DATABASE_URL`             | Postgres connection string (asyncpg)                   |
 | `OPENROUTER_API_KEY`       | LLM API key via OpenRouter                             |
 | `GROQ_API_KEY`             | Groq Whisper for team radio transcription              |
 | `DEEPGRAM_API_KEY`         | Deepgram Aura for TTS                                  |
