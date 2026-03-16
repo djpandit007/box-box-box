@@ -136,6 +136,7 @@ celerybeat.pid
 
 # Test fixtures (regenerate via: uv run python scripts/snapshot_session.py)
 tests/fixtures/
+!tests/fixtures/ci/
 
 # Environments
 # .env is committed (encrypted by dotenvx)

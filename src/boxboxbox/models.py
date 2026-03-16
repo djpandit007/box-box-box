@@ -25,9 +25,7 @@ class Session(Base):
 
 class Driver(Base):
     __tablename__ = "drivers"
-    __table_args__ = (
-        Index("uq_drivers_session_number", "session_key", "driver_number", unique=True),
-    )
+    __table_args__ = (Index("uq_drivers_session_number", "session_key", "driver_number", unique=True),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     session_key: Mapped[int] = mapped_column(ForeignKey("sessions.session_key"))
@@ -68,9 +66,7 @@ class RaceEvent(Base):
 
 class RadioTranscript(Base):
     __tablename__ = "radio_transcripts"
-    __table_args__ = (
-        Index("uq_radio_recording_url", "recording_url", unique=True),
-    )
+    __table_args__ = (Index("uq_radio_recording_url", "recording_url", unique=True),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     session_key: Mapped[int]

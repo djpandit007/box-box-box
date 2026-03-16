@@ -25,8 +25,6 @@ class Settings(BaseSettings):
     def build_database_url(self):
         if not self.DATABASE_URL:
             self.DATABASE_URL = (
-                f"postgresql+asyncpg://{self.POSTGRES_USER}:"
-                f"{self.POSTGRES_PASSWORD}@localhost:5432/"
-                f"{self.POSTGRES_DB}"
+                f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@localhost:5432/{self.POSTGRES_DB}"
             )
         return self

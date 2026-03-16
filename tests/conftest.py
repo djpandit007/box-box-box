@@ -9,9 +9,17 @@ FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 @pytest.fixture
 def fixture_dir():
     """Return the first available session fixture directory."""
-    dirs = sorted(d for d in FIXTURES_DIR.iterdir() if d.is_dir())
-    assert dirs, "No fixtures found. Run: uv run python scripts/snapshot_session.py"
-    return dirs[0]
+    # Prefer full snapshots (numeric session dirs), fall back to ci/
+    dirs = sorted(
+        (d for d in FIXTURES_DIR.iterdir() if d.is_dir() and d.name != "ci"),
+        reverse=True,
+    )
+    if dirs:
+        return dirs[0]
+    ci_dir = FIXTURES_DIR / "ci"
+    if ci_dir.is_dir():
+        return ci_dir
+    pytest.skip("No fixtures found — run: uv run python scripts/snapshot_session.py")
 
 
 @pytest.fixture

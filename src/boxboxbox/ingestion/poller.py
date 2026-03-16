@@ -60,9 +60,7 @@ class Poller:
                     name_acronym=d.get("name_acronym", ""),
                     headshot_url=d.get("headshot_url"),
                 )
-                driver_stmt = driver_stmt.on_conflict_do_nothing(
-                    index_elements=["session_key", "driver_number"]
-                )
+                driver_stmt = driver_stmt.on_conflict_do_nothing(index_elements=["session_key", "driver_number"])
                 await db.execute(driver_stmt)
 
             await db.commit()
