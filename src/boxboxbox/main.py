@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 
 async def async_main() -> None:
-    settings = Settings()  # ty: ignore[missing-argument]  # pydantic-settings loads from env
+    settings = Settings()  # ty: ignore[missing-argument]
     engine = get_engine(settings.DATABASE_URL)
     session_factory = get_session_factory(engine)
     client = OpenF1Client(settings.OPENF1_BASE_URL)

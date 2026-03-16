@@ -13,10 +13,12 @@ echo "==> ruff check"
 uv run ruff check $STAGED
 echo "    Passed."
 
-echo "==> ruff format --check"
+echo "==> ruff format"
 # shellcheck disable=SC2086
-uv run ruff format --check $STAGED
-echo "    Passed."
+uv run ruff format $STAGED
+# shellcheck disable=SC2086
+git add $STAGED
+echo "    Formatted & re-staged."
 
 echo "==> ty check"
 uvx ty check
