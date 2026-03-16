@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM -- '*.py')
+
+if [ -z "$STAGED" ]; then
+    echo "No Python files staged, skipping checks."
+    exit 0
+fi
+
+echo "==> ruff check"
+# shellcheck disable=SC2086
+uv run ruff check $STAGED
+echo "    Passed."
+
+echo "==> ruff format"
+# shellcheck disable=SC2086
+uv run ruff format $STAGED
+# shellcheck disable=SC2086
+git add $STAGED
+echo "    Formatted & re-staged."
+
+echo "==> ty check"
+uvx ty check
+echo "    Passed."
+
+echo "All pre-commit checks passed."

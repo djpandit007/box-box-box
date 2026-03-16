@@ -35,7 +35,7 @@ OpenF1 has no live commentary text feed. Instead, we **synthesize narrative** fr
 box-box-box/
 ├── .env                            # Encrypted secrets (committed)
 ├── .env.keys                       # Decryption keys (NEVER commit)
-├── .dockerignore                   # Excludes .env.keys
+├── .github/workflows/ci.yml        # CI: lint, type check, test
 ├── pyproject.toml
 ├── docker-compose.yml              # Postgres + pgvector
 ├── alembic.ini
@@ -47,34 +47,36 @@ box-box-box/
 │   ├── ingestion/
 │   │   ├── client.py               # OpenF1 API client (rate-limited)
 │   │   ├── poller.py               # Priority-based polling orchestrator
-│   │   └── endpoints.py            # Endpoint configs & parsers
-│   ├── audio/
-│   │   ├── downloader.py           # Team radio MP3 downloader
-│   │   └── transcriber.py          # Groq Whisper STT
-│   ├── summariser/
-│   │   ├── prompt_builder.py       # XML-tagged prompt construction
-│   │   ├── engine.py               # 60-second summarisation loop
-│   │   └── embeddings.py           # pgvector semantic search
-│   ├── delivery/
-│   │   ├── websocket.py            # WebSocket server
-│   │   └── tts.py                  # Deepgram TTS
-│   ├── frontend/                   # Pyodide WASM assets
+│   │   ├── endpoints.py            # Endpoint configs & priorities
+│   │   └── schemas.py              # Pydantic models for API responses
+│   ├── audio/                      # Phase 3 (not yet implemented)
+│   ├── summariser/                 # Phase 2 (not yet implemented)
+│   ├── delivery/                   # Phase 4 (not yet implemented)
 │   └── main.py                     # asyncio entrypoint
 ├── tests/
-│   └── fixtures/                   # Saved API responses for offline testing
+│   ├── fixtures/ci/                # Trimmed API fixtures (committed)
+│   ├── fixtures/{session_key}/     # Full API snapshots (gitignored)
+│   ├── test_client.py              # API client & fixture parsing tests
+│   ├── test_poller.py              # Polling orchestrator tests
+│   └── test_schemas.py             # Pydantic schema validation tests
 └── scripts/
-    └── snapshot_session.py         # Download session data for offline testing
+    ├── snapshot_session.py         # Download session data for offline testing
+    ├── init-db.sh                  # Docker entrypoint: create test DB
+    └── pre-commit                  # Git pre-commit hook (ruff + ty)
 ```
 
 ## Build Phases
 
 ### Phase 1: Foundation — Project Setup + Data Ingestion
 
-- [ ] Project scaffolding (`pyproject.toml`, `config.py`, `docker-compose.yml`)
-- [ ] Database schema & Alembic migrations
-- [ ] OpenF1 API client with rate limiting (30 req/min budget)
-- [ ] Priority-based polling orchestrator
-- [ ] Test fixtures from historical session data
+- [x] Project scaffolding (`pyproject.toml`, `config.py`, `docker-compose.yml`)
+- [x] Database schema & Alembic migrations
+- [x] OpenF1 API client with rate limiting and retry logic
+- [x] Priority-based polling orchestrator
+- [x] Pydantic response schemas for all OpenF1 endpoints
+- [x] Test fixtures from historical session data
+- [x] CI pipeline (GitHub Actions: ruff, ty, pytest)
+- [x] Pre-commit hook (ruff + ty)
 
 ### Phase 2: Summarisation Engine (MVP)
 
@@ -152,7 +154,6 @@ Stays within the free tier limit of 30 req/min:
 curl -sfS https://dotenvx.sh/install.sh | sh
 
 # Set secrets (first time only)
-dotenvx set DATABASE_URL "postgresql+asyncpg://boxboxbox:boxboxbox@localhost:5432/boxboxbox"
 dotenvx set OPENROUTER_API_KEY "your-key"
 
 # Start Postgres
@@ -180,7 +181,6 @@ Secrets are encrypted at rest — only `.env.keys` (gitignored) holds decryption
 curl -sfS https://dotenvx.sh/install.sh | sh
 
 # Set your secrets (encrypts automatically)
-dotenvx set DATABASE_URL "postgresql+asyncpg://user:pass@localhost:5432/boxboxbox"
 dotenvx set OPENROUTER_API_KEY "sk-or-..."
 dotenvx set GROQ_API_KEY "gsk_..."
 dotenvx set DEEPGRAM_API_KEY "..."
@@ -195,13 +195,56 @@ This creates:
 
 | Variable                   | Description                                            |
 | -------------------------- | ------------------------------------------------------ |
-| `DATABASE_URL`             | Postgres connection string (asyncpg)                   |
 | `OPENROUTER_API_KEY`       | LLM API key via OpenRouter                             |
 | `GROQ_API_KEY`             | Groq Whisper for team radio transcription              |
 | `DEEPGRAM_API_KEY`         | Deepgram Aura for TTS                                  |
 | `OPENF1_BASE_URL`          | OpenF1 API base (default: `https://api.openf1.org/v1`) |
 | `POLL_INTERVAL_SECONDS`    | Polling frequency (default: `10`)                      |
 | `SUMMARY_INTERVAL_SECONDS` | Summary generation interval (default: `60`)            |
+
+## Development
+
+### Install dev dependencies
+
+```bash
+uv sync --dev
+```
+
+### Run tests
+
+```bash
+uv run pytest
+```
+
+To regenerate full test fixtures from the latest OpenF1 session:
+
+```bash
+uv run python scripts/snapshot_session.py
+```
+
+### Linting & formatting
+
+```bash
+uv run ruff check .          # lint
+uv run ruff format --check .  # format check
+uv run ruff format .          # auto-format
+```
+
+### Type checking
+
+This project uses [ty](https://docs.astral.sh/ty/) for static type checking:
+
+```bash
+uvx ty check
+```
+
+### Pre-commit hook
+
+Install the pre-commit hook to run ruff and ty before each commit:
+
+```bash
+ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+```
 
 ## Future Ideas
 
