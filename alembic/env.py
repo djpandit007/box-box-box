@@ -15,7 +15,7 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    settings = Settings()
+    settings = Settings()  # ty: ignore[missing-argument]  # pydantic-settings loads from env
     context.configure(
         url=settings.DATABASE_URL,
         target_metadata=target_metadata,
@@ -33,7 +33,7 @@ def do_run_migrations(connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    settings = Settings()
+    settings = Settings()  # ty: ignore[missing-argument]  # pydantic-settings loads from env
     engine = create_async_engine(settings.DATABASE_URL)
     async with engine.connect() as connection:
         await connection.run_sync(do_run_migrations)

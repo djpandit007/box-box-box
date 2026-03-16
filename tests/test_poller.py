@@ -87,8 +87,20 @@ class TestIncrementalDateTracking:
     @pytest.mark.asyncio
     async def test_last_dates_updated_after_fetch(self, mock_client, mock_session_factory):
         mock_client.get.return_value = [
-            {"date": "2025-03-16T14:00:00", "message": "GREEN LIGHT"},
-            {"date": "2025-03-16T14:01:00", "message": "YELLOW FLAG"},
+            {
+                "date": "2025-03-16T14:00:00",
+                "message": "GREEN LIGHT",
+                "meeting_key": 1,
+                "session_key": 12345,
+                "category": "Flag",
+            },
+            {
+                "date": "2025-03-16T14:01:00",
+                "message": "YELLOW FLAG",
+                "meeting_key": 1,
+                "session_key": 12345,
+                "category": "Flag",
+            },
         ]
 
         poller = Poller(mock_client, mock_session_factory)

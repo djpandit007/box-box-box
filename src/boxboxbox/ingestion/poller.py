@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.ingestion.endpoints import ENDPOINTS, EndpointConfig, Priority
+from boxboxbox.ingestion.schemas import ENDPOINT_MODELS, DriverResponse, SessionResponse
 from boxboxbox.models import Driver, RaceEvent, RadioTranscript, Session
 
 logger = logging.getLogger(__name__)
@@ -22,43 +23,43 @@ class Poller:
         self._last_dates: dict[str, str] = {}
 
     async def initialize(self) -> None:
-        sessions = await self._client.get("/sessions", {"session_key": self._session_key})
+        sessions = await self._client.get("/sessions", {"session_key": self._session_key}, model=SessionResponse)
         if not sessions:
             raise RuntimeError("No session found for session_key=latest")
 
-        session_data = sessions[0]
-        self._session_key = session_data["session_key"]
+        s = sessions[0]
+        self._session_key = s.session_key
         logger.info(
             "Tracking session %s: %s at %s",
             self._session_key,
-            session_data.get("session_name", "Unknown"),
-            session_data.get("circuit_short_name", "Unknown"),
+            s.session_name,
+            s.circuit_short_name,
         )
 
         async with self._session_factory() as db:
             stmt = pg_insert(Session).values(
-                session_key=session_data["session_key"],
-                session_name=session_data.get("session_name", ""),
-                session_type=session_data.get("session_type", ""),
-                circuit_short_name=session_data.get("circuit_short_name", ""),
-                country_name=session_data.get("country_name", ""),
-                date_start=session_data.get("date_start"),
-                date_end=session_data.get("date_end"),
+                session_key=s.session_key,
+                session_name=s.session_name,
+                session_type=s.session_type,
+                circuit_short_name=s.circuit_short_name,
+                country_name=s.country_name,
+                date_start=s.date_start,
+                date_end=s.date_end,
             )
             stmt = stmt.on_conflict_do_nothing(index_elements=["session_key"])
             await db.execute(stmt)
 
-            drivers = await self._client.get("/drivers", {"session_key": self._session_key})
+            drivers = await self._client.get("/drivers", {"session_key": self._session_key}, model=DriverResponse)
             for d in drivers:
                 driver_stmt = pg_insert(Driver).values(
                     session_key=self._session_key,
-                    driver_number=d["driver_number"],
-                    broadcast_name=d.get("broadcast_name", ""),
-                    full_name=d.get("full_name", ""),
-                    team_name=d.get("team_name", ""),
-                    team_colour=d.get("team_colour", ""),
-                    name_acronym=d.get("name_acronym", ""),
-                    headshot_url=d.get("headshot_url"),
+                    driver_number=d.driver_number,
+                    broadcast_name=d.broadcast_name,
+                    full_name=d.full_name,
+                    team_name=d.team_name,
+                    team_colour=d.team_colour,
+                    name_acronym=d.name_acronym,
+                    headshot_url=d.headshot_url,
                 )
                 driver_stmt = driver_stmt.on_conflict_do_nothing(index_elements=["session_key", "driver_number"])
                 await db.execute(driver_stmt)
@@ -89,13 +90,21 @@ class Poller:
             params[f"{endpoint.date_field}>"] = last_date
 
         try:
-            records = await self._client.get(endpoint.path, params)
+            raw_records = await self._client.get(endpoint.path, params)
         except Exception:
             logger.exception("Failed to fetch %s", endpoint.name)
             return
 
-        if not records:
+        if not raw_records:
             return
+
+        # Validate via Pydantic schema, then dump back to dict for storage
+        model_cls = ENDPOINT_MODELS.get(endpoint.name)
+        if model_cls:
+            validated = [model_cls.model_validate(r) for r in raw_records]
+            records = [v.model_dump() for v in validated]
+        else:
+            records = raw_records
 
         logger.info("Fetched %d records from %s", len(records), endpoint.name)
 

@@ -200,6 +200,26 @@ This creates:
 | `POLL_INTERVAL_SECONDS`    | Polling frequency (default: `10`)                      |
 | `SUMMARY_INTERVAL_SECONDS` | Summary generation interval (default: `60`)            |
 
+## Development
+
+### Pre-commit hook
+
+Install the pre-commit hook to run linting, formatting, and type checks before each commit:
+
+```bash
+ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+```
+
+The hook runs ruff (lint + format) on staged Python files and ty (type check) on the full project.
+
+### Type checking
+
+This project uses [ty](https://docs.astral.sh/ty/) for static type checking:
+
+```bash
+uvx ty check
+```
+
 ## Future Ideas
 
 - Historical race replay (reprocess past sessions from OpenF1 archive)

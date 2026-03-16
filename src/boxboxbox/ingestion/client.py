@@ -2,14 +2,18 @@ import asyncio
 import hashlib
 import json
 import logging
+from typing import TypeVar, overload
 
 import httpx
 from aiolimiter import AsyncLimiter
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
 RETRY_BACKOFF = 5.0  # seconds
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class OpenF1Client:
@@ -18,7 +22,15 @@ class OpenF1Client:
         self._limiter_per_second = AsyncLimiter(2, 1.0)
         self._limiter_per_minute = AsyncLimiter(25, 60.0)
 
-    async def get(self, endpoint: str, params: dict | None = None) -> list[dict]:
+    @overload
+    async def get(self, endpoint: str, params: dict | None = None) -> list[dict]: ...
+
+    @overload
+    async def get(self, endpoint: str, params: dict | None = None, *, model: type[T]) -> list[T]: ...
+
+    async def get(
+        self, endpoint: str, params: dict | None = None, *, model: type[T] | None = None
+    ) -> list[dict] | list[T]:
         for attempt in range(MAX_RETRIES):
             await self._limiter_per_second.acquire()
             await self._limiter_per_minute.acquire()
@@ -30,7 +42,10 @@ class OpenF1Client:
                 await asyncio.sleep(wait)
                 continue
             resp.raise_for_status()
-            return resp.json()
+            data: list[dict] = resp.json()
+            if model is not None:
+                return [model.model_validate(item) for item in data]
+            return data
         resp.raise_for_status()
         return []
 
