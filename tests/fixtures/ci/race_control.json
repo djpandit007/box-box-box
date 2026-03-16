@@ -1,0 +1,41 @@
+[
+  {
+    "meeting_key": 1280,
+    "session_key": 11245,
+    "date": "2026-03-15T06:20:01+00:00",
+    "driver_number": null,
+    "lap_number": 1,
+    "category": "Flag",
+    "flag": "GREEN",
+    "scope": "Track",
+    "sector": null,
+    "qualifying_phase": null,
+    "message": "GREEN LIGHT - PIT EXIT OPEN"
+  },
+  {
+    "meeting_key": 1280,
+    "session_key": 11245,
+    "date": "2026-03-15T06:30:01+00:00",
+    "driver_number": null,
+    "lap_number": 1,
+    "category": "Other",
+    "flag": null,
+    "scope": null,
+    "sector": null,
+    "qualifying_phase": null,
+    "message": "PIT EXIT CLOSED"
+  },
+  {
+    "meeting_key": 1280,
+    "session_key": 11245,
+    "date": "2026-03-15T06:32:39+00:00",
+    "driver_number": null,
+    "lap_number": 1,
+    "category": "Flag",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector",
+    "sector": 11,
+    "qualifying_phase": null,
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 11"
+  }
+]

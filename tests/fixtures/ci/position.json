@@ -1,0 +1,23 @@
+[
+  {
+    "date": "2026-03-15T06:07:48.873000+00:00",
+    "session_key": 11245,
+    "position": 1,
+    "meeting_key": 1280,
+    "driver_number": 12
+  },
+  {
+    "date": "2026-03-15T06:07:48.873000+00:00",
+    "session_key": 11245,
+    "position": 2,
+    "meeting_key": 1280,
+    "driver_number": 63
+  },
+  {
+    "date": "2026-03-15T06:07:48.873000+00:00",
+    "session_key": 11245,
+    "position": 3,
+    "meeting_key": 1280,
+    "driver_number": 44
+  }
+]
