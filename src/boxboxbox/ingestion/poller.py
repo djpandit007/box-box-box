@@ -120,7 +120,12 @@ class Poller:
         if endpoint.date_field:
             dates = [r.get(endpoint.date_field) for r in records if r.get(endpoint.date_field)]
             if dates:
-                self._last_dates[endpoint.name] = max(dates)
+                # Records may contain datetimes (after Pydantic validation) or raw strings.
+                latest = max(dates)
+                if isinstance(latest, datetime):
+                    self._last_dates[endpoint.name] = latest.isoformat()
+                else:
+                    self._last_dates[endpoint.name] = str(latest)
 
         async with self._session_factory() as db:
             if endpoint.name == "team_radio":
