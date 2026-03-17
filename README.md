@@ -12,7 +12,7 @@ OpenF1 has no live commentary text feed. Instead, we **synthesize narrative** fr
 
 1. **Poll** race control messages, positions, pit stops, overtakes, intervals, laps, weather, and team radio every 10 seconds
 2. **Transcribe** team radio MP3 clips via Groq Whisper
-3. **Summarise** all events from the last 60 seconds into a natural-language race update via LLM (OpenRouter + PydanticAI)
+3. **Summarise** all events from the last 60 seconds into a natural-language race update via LLM (OpenRouter + PydanticAI), using Jinja2-rendered XML-tagged prompts
 4. **Deliver** summaries in real-time via WebSocket, with optional TTS audio
 
 ## Tech Stack
@@ -50,16 +50,27 @@ box-box-box/
 │   │   ├── poller.py               # Priority-based polling orchestrator
 │   │   ├── endpoints.py            # Endpoint configs & priorities
 │   │   └── schemas.py              # Pydantic models for API responses
+│   ├── summariser/
+│   │   ├── prompt.py               # Jinja2 prompt builder (DB queries + rendering)
+│   │   ├── agent.py                # PydanticAI agent config (summary + digest)
+│   │   ├── embeddings.py           # OpenRouter embedding client
+│   │   ├── loop.py                 # 60-second summarisation loop
+│   │   ├── digest.py               # Post-race digest generator
+│   │   └── templates/
+│   │       ├── summary_prompt.xml.jinja2   # XML-tagged prompt template
+│   │       └── digest_prompt.xml.jinja2    # Post-race digest prompt template
 │   ├── audio/                      # Phase 3 (not yet implemented)
-│   ├── summariser/                 # Phase 2 (not yet implemented)
 │   ├── delivery/                   # Phase 4 (not yet implemented)
-│   └── main.py                     # asyncio entrypoint
+│   └── main.py                     # asyncio entrypoint (poller + summariser)
 ├── tests/
 │   ├── fixtures/ci/                # Trimmed API fixtures (committed)
 │   ├── fixtures/{session_key}/     # Full API snapshots (gitignored)
 │   ├── test_client.py              # API client & fixture parsing tests
 │   ├── test_poller.py              # Polling orchestrator tests
-│   └── test_schemas.py             # Pydantic schema validation tests
+│   ├── test_schemas.py             # Pydantic schema validation tests
+│   ├── test_prompt.py              # Prompt builder tests
+│   ├── test_summariser.py          # Summarisation loop tests
+│   └── test_digest.py              # Post-race digest tests
 └── scripts/
     ├── snapshot_session.py         # Download session data for offline testing
     ├── init-db.sh                  # Docker entrypoint: create test DB
@@ -81,10 +92,10 @@ box-box-box/
 
 ### Phase 2: Summarisation Engine (MVP)
 
-- [ ] XML-tagged prompt builder (events grouped by type, previous summary for continuity)
-- [ ] 60-second summarisation loop via PydanticAI + OpenRouter
-- [ ] pgvector embeddings for semantic search
-- [ ] Post-race digest — final LLM call with all summaries as context to generate a shareable race report
+- [x] Jinja2-templated prompt builder (events grouped by type via XML tags, previous summary for continuity)
+- [x] 60-second summarisation loop via PydanticAI + OpenRouter
+- [x] pgvector embeddings for semantic search
+- [x] Post-race digest — final LLM call with all summaries as context to generate a shareable race report
 
 > **After Phase 2, we have a working product**: run the app, it polls OpenF1, and every 60s prints a narrative race summary.
 
