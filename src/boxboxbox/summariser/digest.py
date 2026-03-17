@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+import logging
+import pathlib
+
+from typing import Any
+
+from jinja2 import Environment, FileSystemLoader
+from pydantic_ai import Agent
+from sqlalchemy import select
+
+from boxboxbox.models import Session, Summary
+from boxboxbox.summariser.embeddings import EmbeddingClient
+
+logger = logging.getLogger(__name__)
+
+_TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
+_jinja_env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), keep_trailing_newline=True)
+
+
+async def generate_digest(
+    session_factory: Any,
+    digest_agent: Agent,
+    embedding_client: EmbeddingClient,
+    session_key: int,
+) -> str:
+    """Generate a post-race digest from all summaries and store it."""
+    async with session_factory() as db:
+        result = await db.execute(
+            select(Summary).where(Summary.session_key == session_key).order_by(Summary.window_start)
+        )
+        summaries = result.scalars().all()
+
+        if not summaries:
+            logger.warning("No summaries found for digest generation")
+            return ""
+
+        # Fetch session metadata for the template
+        session_result = await db.execute(select(Session).where(Session.session_key == session_key))
+        session = session_result.scalar_one_or_none()
+
+        digest_prompt = _build_digest_prompt(summaries, session)
+
+        agent_result = await digest_agent.run(user_prompt=digest_prompt)
+        digest_text = agent_result.output
+
+        embedding = await embedding_client.embed(digest_text)
+
+        digest = Summary(
+            session_key=session_key,
+            window_start=summaries[0].window_start,
+            window_end=summaries[-1].window_end,
+            prompt_text=digest_prompt,
+            summary_text=digest_text,
+            embedding=embedding,
+        )
+        db.add(digest)
+        await db.commit()
+
+        logger.info("Post-race digest generated")
+        print(f"\n{'#' * 60}")
+        print("POST-RACE DIGEST")
+        print(f"{'#' * 60}")
+        print(digest_text)
+        print(f"{'#' * 60}\n")
+
+        return digest_text
+
+
+def _build_digest_prompt(summaries: list[Summary], session: Session | None) -> str:
+    """Render the digest prompt template with all race summaries."""
+    template = _jinja_env.get_template("digest_prompt.xml.jinja2")
+    return template.render(
+        session_name=session.session_name if session else "Unknown",
+        circuit=session.circuit_short_name if session else "Unknown",
+        summaries=[
+            {
+                "window_start": s.window_start.strftime("%H:%M:%S"),
+                "window_end": s.window_end.strftime("%H:%M:%S"),
+                "text": s.summary_text,
+            }
+            for s in summaries
+        ],
+    )

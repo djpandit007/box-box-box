@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import UTC, datetime
+
+from typing import Any
+
+from pydantic_ai import Agent
+from sqlalchemy import func, select
+
+from boxboxbox.models import RaceEvent, Summary
+from boxboxbox.summariser.embeddings import EmbeddingClient
+from boxboxbox.summariser.prompt import build_prompt
+
+logger = logging.getLogger(__name__)
+
+
+class SummarisationLoop:
+    """Orchestrates 60-second summarisation cycles during a live race."""
+
+    def __init__(
+        self,
+        session_factory: Any,
+        agent: Agent,
+        embedding_client: EmbeddingClient,
+        session_key: int,
+        interval_seconds: int = 60,
+        grace_seconds: int = 300,
+    ):
+        self._session_factory = session_factory
+        self._agent = agent
+        self._embedding_client = embedding_client
+        self._session_key = session_key
+        self._interval = interval_seconds
+        self._grace_seconds = grace_seconds
+        self._last_window_end: datetime | None = None
+        self._no_events_since: datetime | None = None
+
+    async def run(self) -> None:
+        """Run the summarisation loop until the session ends."""
+        logger.info("Summarisation loop started (interval=%ds)", self._interval)
+        try:
+            while True:
+                session_ended = await self.summarise_once()
+                if session_ended:
+                    logger.info("Session appears to have ended")
+                    break
+                await asyncio.sleep(self._interval)
+        except asyncio.CancelledError:
+            logger.info("Summarisation loop cancelled")
+
+    async def summarise_once(self) -> bool:
+        """Generate one summary for the current window.
+
+        Returns True if the session appears to have ended (no events for grace period).
+        """
+        now = datetime.now(UTC)
+        window_end = now
+
+        if self._last_window_end is None:
+            window_start = await self._earliest_event_date()
+            if window_start is None:
+                # No events at all yet — wait for the poller to populate data
+                return False
+        else:
+            window_start = self._last_window_end
+
+        async with self._session_factory() as db:
+            previous_summary = await self._get_previous_summary(db)
+
+            prompt = await build_prompt(db, self._session_key, window_start, window_end, previous_summary)
+
+            if prompt is None:
+                if self._no_events_since is None:
+                    self._no_events_since = now
+                elif (now - self._no_events_since).total_seconds() > self._grace_seconds:
+                    return True
+                self._last_window_end = window_end
+                return False
+
+            self._no_events_since = None
+
+            result = await self._agent.run(user_prompt=prompt)
+            summary_text = result.output
+
+            embedding = await self._embedding_client.embed(summary_text)
+
+            summary = Summary(
+                session_key=self._session_key,
+                window_start=window_start,
+                window_end=window_end,
+                prompt_text=prompt,
+                summary_text=summary_text,
+                embedding=embedding,
+            )
+            db.add(summary)
+            await db.commit()
+
+            logger.info("Summary: %s", summary_text[:120])
+            print(f"\n{'=' * 60}")
+            print(f"[{window_start.strftime('%H:%M:%S')} - {window_end.strftime('%H:%M:%S')}]")
+            print(summary_text)
+            print(f"{'=' * 60}\n")
+
+        self._last_window_end = window_end
+        return False
+
+    async def _earliest_event_date(self) -> datetime | None:
+        """Find the earliest event date for this session to bootstrap the first window."""
+        async with self._session_factory() as db:
+            result = await db.execute(
+                select(func.min(RaceEvent.event_date)).where(RaceEvent.session_key == self._session_key)
+            )
+            return result.scalar_one_or_none()
+
+    async def _get_previous_summary(self, db) -> str | None:
+        """Fetch the most recent summary text for narrative continuity."""
+        result = await db.execute(
+            select(Summary.summary_text)
+            .where(Summary.session_key == self._session_key)
+            .order_by(Summary.window_end.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()

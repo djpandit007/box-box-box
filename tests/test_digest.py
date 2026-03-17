@@ -1,0 +1,120 @@
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from boxboxbox.models import Session, Summary
+from boxboxbox.summariser.digest import _build_digest_prompt, generate_digest
+
+
+def _make_summary(window_start: str, window_end: str, text: str) -> Summary:
+    s = MagicMock(spec=Summary)
+    s.window_start = datetime.fromisoformat(window_start)
+    s.window_end = datetime.fromisoformat(window_end)
+    s.summary_text = text
+    return s
+
+
+def _make_session(name: str = "Race", circuit: str = "Monza") -> Session:
+    s = MagicMock(spec=Session)
+    s.session_name = name
+    s.circuit_short_name = circuit
+    return s
+
+
+class TestBuildDigestPrompt:
+    def test_includes_all_summaries(self):
+        summaries = [
+            _make_summary("2026-03-15T06:20:00", "2026-03-15T06:21:00", "Hamilton leads after lap 1."),
+            _make_summary("2026-03-15T06:21:00", "2026-03-15T06:22:00", "Verstappen pits for hards."),
+        ]
+        session = _make_session("Australian Grand Prix", "Melbourne")
+
+        prompt = _build_digest_prompt(summaries, session)
+
+        assert "<race_summaries" in prompt
+        assert 'session="Australian Grand Prix"' in prompt
+        assert 'circuit="Melbourne"' in prompt
+        assert "Hamilton leads after lap 1." in prompt
+        assert "Verstappen pits for hards." in prompt
+        assert prompt.count("<summary") == 2
+
+    def test_includes_window_timestamps(self):
+        summaries = [_make_summary("2026-03-15T06:20:00", "2026-03-15T06:21:00", "Test summary.")]
+        prompt = _build_digest_prompt(summaries, _make_session())
+        assert 'window="06:20:00-06:21:00"' in prompt
+
+    def test_handles_none_session(self):
+        summaries = [_make_summary("2026-03-15T06:20:00", "2026-03-15T06:21:00", "Test.")]
+        prompt = _build_digest_prompt(summaries, None)
+        assert 'session="Unknown"' in prompt
+        assert 'circuit="Unknown"' in prompt
+
+
+class TestGenerateDigest:
+    @pytest.mark.asyncio
+    async def test_generates_and_stores_digest(self):
+        # Mock agent
+        agent = AsyncMock()
+        agent_result = MagicMock()
+        agent_result.output = "A thrilling race saw Hamilton take victory after a masterful strategy call."
+        agent.run = AsyncMock(return_value=agent_result)
+
+        # Mock embedding client
+        embedding_client = AsyncMock()
+        embedding_client.embed = AsyncMock(return_value=[0.0] * 1536)
+
+        # Mock DB session with summaries
+        summary1 = _make_summary("2026-03-15T06:20:00", "2026-03-15T06:21:00", "Summary 1")
+        summary2 = _make_summary("2026-03-15T06:21:00", "2026-03-15T06:22:00", "Summary 2")
+
+        session_obj = _make_session("Race", "Melbourne")
+
+        summaries_result = MagicMock()
+        summaries_result.scalars.return_value.all.return_value = [summary1, summary2]
+
+        session_result = MagicMock()
+        session_result.scalar_one_or_none.return_value = session_obj
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[summaries_result, session_result])
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+
+        factory_cm = AsyncMock()
+        factory_cm.__aenter__ = AsyncMock(return_value=db)
+        factory_cm.__aexit__ = AsyncMock(return_value=False)
+
+        def make_session():
+            return factory_cm
+
+        result = await generate_digest(make_session, agent, embedding_client, 12345)
+
+        assert result == "A thrilling race saw Hamilton take victory after a masterful strategy call."
+        agent.run.assert_called_once()
+        embedding_client.embed.assert_called_once()
+        db.add.assert_called_once()
+        db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_summaries(self):
+        agent = AsyncMock()
+        embedding_client = AsyncMock()
+
+        summaries_result = MagicMock()
+        summaries_result.scalars.return_value.all.return_value = []
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=summaries_result)
+
+        factory_cm = AsyncMock()
+        factory_cm.__aenter__ = AsyncMock(return_value=db)
+        factory_cm.__aexit__ = AsyncMock(return_value=False)
+
+        def make_session():
+            return factory_cm
+
+        result = await generate_digest(make_session, agent, embedding_client, 12345)
+
+        assert result == ""
+        agent.run.assert_not_called()

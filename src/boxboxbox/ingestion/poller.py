@@ -21,6 +21,14 @@ class Poller:
         self._session_key: str | int = "latest"
         self._tick = 0
         self._last_dates: dict[str, str] = {}
+        self._initialized = False
+
+    @property
+    def session_key(self) -> int:
+        """Return the resolved session key. Only valid after initialize()."""
+        if not self._initialized:
+            raise RuntimeError("Poller not initialized — call initialize() first")
+        return self._session_key  # type: ignore[return-value]
 
     async def initialize(self) -> None:
         sessions = await self._client.get("/sessions", {"session_key": self._session_key}, model=SessionResponse)
@@ -65,6 +73,7 @@ class Poller:
                 await db.execute(driver_stmt)
 
             await db.commit()
+        self._initialized = True
         logger.info("Initialized with %d drivers", len(drivers))
 
     async def poll_once(self) -> None:
@@ -162,7 +171,8 @@ class Poller:
             await db.execute(stmt)
 
     async def run(self, poll_interval: int = 10) -> None:
-        await self.initialize()
+        if not self._initialized:
+            await self.initialize()
         logger.info("Poller started (interval=%ds)", poll_interval)
         try:
             while True:
