@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import logging
 import pathlib
-
-from typing import Any
+from collections.abc import Sequence
 
 from jinja2 import Environment, FileSystemLoader
 from pydantic_ai import Agent
 from sqlalchemy import select
 
+from boxboxbox.db import SessionFactory
 from boxboxbox.models import Session, Summary
 from boxboxbox.summariser.embeddings import EmbeddingClient
 
@@ -19,7 +19,7 @@ _jinja_env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), keep_trailing_
 
 
 async def generate_digest(
-    session_factory: Any,
+    session_factory: SessionFactory,
     digest_agent: Agent,
     embedding_client: EmbeddingClient,
     session_key: int,
@@ -67,7 +67,7 @@ async def generate_digest(
         return digest_text
 
 
-def _build_digest_prompt(summaries: list[Summary], session: Session | None) -> str:
+def _build_digest_prompt(summaries: Sequence[Summary], session: Session | None) -> str:
     """Render the digest prompt template with all race summaries."""
     template = _jinja_env.get_template("digest_prompt.xml.jinja2")
     return template.render(

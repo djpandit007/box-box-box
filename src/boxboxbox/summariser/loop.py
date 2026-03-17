@@ -4,11 +4,10 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from typing import Any
-
 from pydantic_ai import Agent
 from sqlalchemy import func, select
 
+from boxboxbox.db import SessionFactory
 from boxboxbox.models import RaceEvent, Summary
 from boxboxbox.summariser.embeddings import EmbeddingClient
 from boxboxbox.summariser.prompt import build_prompt
@@ -21,7 +20,7 @@ class SummarisationLoop:
 
     def __init__(
         self,
-        session_factory: Any,
+        session_factory: SessionFactory,
         agent: Agent,
         embedding_client: EmbeddingClient,
         session_key: int,
