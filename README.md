@@ -17,17 +17,18 @@ OpenF1 has no live commentary text feed. Instead, we **synthesize narrative** fr
 
 ## Tech Stack
 
-| Component      | Technology                                                                    |
-| -------------- | ----------------------------------------------------------------------------- |
-| Language       | Python 3.12+                                                                  |
-| Data Source    | [OpenF1 API](https://openf1.org)                                              |
-| Database       | PostgreSQL 16 + pgvector                                                      |
-| LLM            | [OpenRouter](https://openrouter.ai) via [PydanticAI](https://ai.pydantic.dev) |
-| Speech-to-Text | Groq Whisper                                                                  |
-| Text-to-Speech | Deepgram Aura                                                                 |
-| Frontend       | Pyodide (Python in WebAssembly)                                               |
-| Secrets        | [dotenvx](https://dotenvx.com)                                                |
-| Web Framework  | [FastAPI](https://fastapi.tiangolo.com) (REST API + WebSocket)                |
+| Component      | Technology                                                                              |
+| -------------- | --------------------------------------------------------------------------------------- |
+| Language       | Python 3.12+                                                                            |
+| Data Source    | [OpenF1 API](https://openf1.org)                                                        |
+| Database       | PostgreSQL 16 + pgvector                                                                |
+| LLM            | [OpenRouter](https://openrouter.ai) via [PydanticAI](https://ai.pydantic.dev)           |
+| Speech-to-Text | Groq Whisper                                                                            |
+| Text-to-Speech | Deepgram Aura                                                                           |
+| Frontend       | [htmx](https://htmx.org) + [Alpine.js](https://alpinejs.dev) + Jinja2 templates         |
+| Visualisations | [Pyodide](https://pyodide.org) (Python in WebAssembly) for client-side charts           |
+| Secrets        | [dotenvx](https://dotenvx.com)                                                          |
+| Web Framework  | [FastAPI](https://fastapi.tiangolo.com) (REST API + WebSocket + htmx HTML fragments)    |
 
 ## Project Structure
 
@@ -95,20 +96,23 @@ box-box-box/
 
 ### Phase 4: Derived Intelligence + Delivery
 
-- [ ] WebSocket server for real-time push
-- [ ] REST API endpoints (sessions, summaries, semantic search, standings)
+- [ ] WebSocket server pushing pre-rendered HTML fragments (htmx `hx-swap-oob`)
+- [ ] REST API endpoints returning Jinja2 partials (sessions, summaries, semantic search, standings)
 - [ ] Battle detector — flag when two drivers' interval drops below ~1.5s and holds; resolve via `/overtakes`
 - [ ] Weather alerts — monitor `/weather` rainfall transitions (0→1) and trigger push notifications
 - [ ] Gap delta computation — track interval changes over time (closing/opening) for leaderboard enrichment
 
-### Phase 5: Frontend (Pyodide/WASM)
+### Phase 5: Frontend (htmx + Alpine.js + Pyodide)
 
-- [ ] Live leaderboard with gap deltas and sparkline trend charts (computed client-side)
+- [ ] htmx WebSocket integration — server pushes HTML fragments for timeline, leaderboard, and race control updates
+- [ ] Jinja2 template partials — reusable components for summary card, leaderboard row, radio clip card
+- [ ] Live leaderboard with gap deltas and sparkline trend charts (Pyodide/WASM on `<canvas>`)
 - [ ] Tyre strategy view — horizontal bars per driver showing compound + tyre age
-- [ ] Race control ticker — scrollable raw `/race_control` message feed
-- [ ] Team radio player — driver avatar, transcript, play button, mood tags
+- [ ] Race control ticker — SSE-driven scrollable `/race_control` message feed
+- [ ] Team radio player — Alpine.js for audio controls, transcript expand/collapse, mood tags
 - [ ] Battle highlights in the narrative timeline
-- [ ] Driver focus mode — filter summaries, radio, and gap charts to a selected driver
+- [ ] Driver focus mode (Alpine.js) — filter summaries, radio, and gap charts to a selected driver
+- [ ] Lazy-loading historical summaries via htmx (`hx-trigger="revealed"`)
 - [ ] Weather radar — ambient dry/damp/wet indicator
 
 ## Features
