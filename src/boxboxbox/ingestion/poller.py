@@ -163,7 +163,7 @@ class Poller:
                 session_key=self._session_key,
                 driver_number=r.get("driver_number", 0),
                 recording_url=recording_url,
-                recording_date=r.get("date", datetime.min),
+                recording_date=self._parse_dt(r.get("date")) or datetime.min,
                 transcript=None,
             )
             stmt = stmt.on_conflict_do_nothing(index_elements=["recording_url"])
@@ -171,7 +171,7 @@ class Poller:
 
     async def _store_events(self, db, source: str, records: list[dict]) -> None:
         for r in records:
-            event_date = r.get("date") or r.get("date_start")
+            event_date = self._parse_dt(r.get("date") or r.get("date_start"))
             if not event_date:
                 continue
             data_hash = OpenF1Client.hash_event(r)
