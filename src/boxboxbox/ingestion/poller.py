@@ -122,7 +122,7 @@ class Poller:
         model_cls = ENDPOINT_MODELS.get(endpoint.name)
         if model_cls:
             validated = [model_cls.model_validate(r) for r in raw_records]
-            records = [v.model_dump() for v in validated]
+            records = [v.model_dump(mode="json") for v in validated]
         else:
             records = raw_records
 
@@ -144,6 +144,15 @@ class Poller:
             else:
                 await self._store_events(db, endpoint.name, records)
             await db.commit()
+
+    @staticmethod
+    def _parse_dt(value) -> datetime | None:
+        """Coerce a value to datetime (handles both str and datetime inputs)."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        return datetime.fromisoformat(value)
 
     async def _store_radio(self, db, records: list[dict]) -> None:
         for r in records:
