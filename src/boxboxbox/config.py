@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     SUMMARY_INTERVAL_SECONDS: int = 60
 
     # Summariser config
-    SUMMARISER_MODEL: str = "openrouter:google/gemini-2.0-flash-001"
-    EMBEDDING_MODEL: str = "openai/text-embedding-3-small"
+    SUMMARISER_MODEL: str = "openrouter/hunter-alpha"
+    EMBEDDING_MODEL: str = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
     SESSION_END_GRACE_SECONDS: int = 300
 
     model_config = {"env_file": ".env", "extra": "ignore"}
