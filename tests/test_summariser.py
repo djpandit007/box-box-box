@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from boxboxbox.summariser.loop import SummarisationLoop
+from boxboxbox.summariser.loop import SummarisationLoop, generate_historical_summaries
 
 
 def _make_stream_result(text: str):
@@ -252,3 +252,84 @@ class TestWindowContinuity:
         # Second call's window_start should equal first call's window_end
         # The first call uses earliest_event_date, second uses _last_window_end
         assert calls[1].args[2] == first_window_end  # window_start of second call
+
+
+class TestGenerateHistoricalSummariesResume:
+    @pytest.mark.asyncio
+    async def test_second_run_reuses_existing_without_llm_call(self):
+        agent = AsyncMock()
+        agent.run_stream = MagicMock(return_value=_make_stream_result("New summary"))
+
+        embedding_client = AsyncMock()
+        embedding_client.embed = AsyncMock(return_value=[0.0] * 1536)
+
+        # First run: DB has events but no existing summaries.
+        min_max_result_1 = MagicMock()
+        min_max_result_1.one.return_value = (
+            datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+            datetime(2026, 3, 15, 6, 1, tzinfo=UTC),
+        )
+        existing_empty_result = MagicMock()
+        existing_empty_result.scalars.return_value.all.return_value = []
+
+        # Second run: DB has same events and one existing summary covering the whole range.
+        min_max_result_2 = MagicMock()
+        min_max_result_2.one.return_value = min_max_result_1.one.return_value
+
+        existing_one = MagicMock()
+        existing_one.window_start = datetime(2026, 3, 15, 6, 0, tzinfo=UTC)
+        existing_one.window_end = datetime(2026, 3, 15, 6, 1, tzinfo=UTC)
+        existing_one.summary_text = "Existing summary"
+
+        existing_one_result = MagicMock()
+        existing_one_result.scalars.return_value.all.return_value = [existing_one]
+
+        db1_init = AsyncMock()
+        db1_init.execute = AsyncMock(side_effect=[min_max_result_1, existing_empty_result])
+
+        db1_loop = AsyncMock()
+        db1_loop.add = MagicMock()
+        db1_loop.commit = AsyncMock()
+
+        db2_init = AsyncMock()
+        db2_init.execute = AsyncMock(side_effect=[min_max_result_2, existing_one_result])
+
+        cm1_init = AsyncMock()
+        cm1_init.__aenter__ = AsyncMock(return_value=db1_init)
+        cm1_init.__aexit__ = AsyncMock(return_value=False)
+
+        cm1_loop = AsyncMock()
+        cm1_loop.__aenter__ = AsyncMock(return_value=db1_loop)
+        cm1_loop.__aexit__ = AsyncMock(return_value=False)
+
+        cm2_init = AsyncMock()
+        cm2_init.__aenter__ = AsyncMock(return_value=db2_init)
+        cm2_init.__aexit__ = AsyncMock(return_value=False)
+
+        cms = [cm1_init, cm1_loop, cm2_init]
+        call_count = 0
+
+        def make_session():
+            nonlocal call_count
+            call_count += 1
+            return cms[call_count - 1]
+
+        with patch("boxboxbox.summariser.loop.build_prompt", new=AsyncMock(return_value="<race_window/>")):
+            await generate_historical_summaries(
+                session_factory=make_session,
+                agent=agent,
+                embedding_client=embedding_client,
+                session_key=12345,
+                interval_seconds=60,
+            )
+            agent.run_stream.reset_mock()
+            await generate_historical_summaries(
+                session_factory=make_session,
+                agent=agent,
+                embedding_client=embedding_client,
+                session_key=12345,
+                interval_seconds=60,
+            )
+
+        # If we are correctly reusing existing summaries on the second run, there should be no LLM calls.
+        agent.run_stream.assert_not_called()

@@ -147,9 +147,26 @@ async def generate_historical_summaries(
         row = result.one()
         earliest, latest = row[0], row[1]
 
+        # Load any existing window summaries so we can display them and resume generation.
+        existing_result = await db.execute(
+            select(Summary)
+            .where(Summary.session_key == session_key, Summary.summary_type == SummaryType.window)
+            .order_by(Summary.window_start)
+        )
+        existing_summaries = existing_result.scalars().all()
+
     if earliest is None or latest is None:
         logger.warning("No events found for session %d — nothing to summarise", session_key)
         return
+
+    existing_by_start: dict[datetime, Summary] = {s.window_start: s for s in existing_summaries}
+    if existing_summaries:
+        logger.info("Found %d existing window summaries; reusing them.", len(existing_summaries))
+        for s in existing_summaries:
+            logger.info("=" * 60)
+            logger.info("[%s - %s] (existing)", s.window_start.strftime("%H:%M:%S"), s.window_end.strftime("%H:%M:%S"))
+            print(s.summary_text, end="\n\n", flush=True)
+        logger.info("=" * 60)
 
     total_seconds = (latest - earliest).total_seconds()
     total_windows = max(1, int(total_seconds / interval_seconds) + 1)
@@ -160,8 +177,18 @@ async def generate_historical_summaries(
         latest.strftime("%H:%M:%S"),
     )
 
-    window_start = earliest
-    previous_summary: str | None = None
+    if existing_summaries:
+        last = existing_summaries[-1]
+        window_start = last.window_end
+        previous_summary: str | None = last.summary_text
+        if window_start >= latest:
+            logger.info(
+                "All windows already summarised up to %s; nothing new to generate.", latest.strftime("%H:%M:%S")
+            )
+            return
+    else:
+        window_start = earliest
+        previous_summary = None
     window_num = 0
 
     while window_start < latest:
@@ -169,6 +196,20 @@ async def generate_historical_summaries(
         window_end = window_start + timedelta(seconds=interval_seconds)
         if window_end > latest:
             window_end = latest + timedelta(seconds=1)
+
+        existing = existing_by_start.get(window_start)
+        if existing is not None:
+            logger.info(
+                "Skipping summary %d/%d [%s - %s] (already exists)",
+                window_num,
+                total_windows,
+                window_start.strftime("%H:%M:%S"),
+                window_end.strftime("%H:%M:%S"),
+            )
+            print(existing.summary_text, end="\n\n", flush=True)
+            previous_summary = existing.summary_text
+            window_start = window_end
+            continue
 
         logger.info(
             "Generating summary %d/%d [%s - %s]",
@@ -208,6 +249,7 @@ async def generate_historical_summaries(
                     await db.commit()
 
                     previous_summary = summary_text
+                    existing_by_start[window_start] = summary
                 except Exception:
                     logger.exception("Failed to generate summary for window %d/%d, skipping", window_num, total_windows)
 
