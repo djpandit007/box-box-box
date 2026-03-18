@@ -9,7 +9,7 @@ from pydantic_ai import Agent
 from sqlalchemy import select
 
 from boxboxbox.db import SessionFactory
-from boxboxbox.models import Session, Summary
+from boxboxbox.models import Session, Summary, SummaryType
 from boxboxbox.summariser.embeddings import EmbeddingClient
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,9 @@ async def generate_digest(
     """Generate a post-race digest from all summaries and store it."""
     async with session_factory() as db:
         result = await db.execute(
-            select(Summary).where(Summary.session_key == session_key).order_by(Summary.window_start)
+            select(Summary)
+            .where(Summary.session_key == session_key, Summary.summary_type == SummaryType.window)
+            .order_by(Summary.window_start)
         )
         summaries = result.scalars().all()
 
@@ -57,6 +59,7 @@ async def generate_digest(
 
         digest = Summary(
             session_key=session_key,
+            summary_type=SummaryType.digest,
             window_start=summaries[0].window_start,
             window_end=summaries[-1].window_end,
             prompt_text=digest_prompt,

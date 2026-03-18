@@ -8,7 +8,7 @@ from pydantic_ai import Agent
 from sqlalchemy import func, select
 
 from boxboxbox.db import SessionFactory
-from boxboxbox.models import RaceEvent, Summary
+from boxboxbox.models import RaceEvent, Summary, SummaryType
 from boxboxbox.summariser.embeddings import EmbeddingClient
 from boxboxbox.summariser.prompt import build_prompt
 
@@ -96,6 +96,7 @@ class SummarisationLoop:
 
                 summary = Summary(
                     session_key=self._session_key,
+                    summary_type=SummaryType.window,
                     window_start=window_start,
                     window_end=window_end,
                     prompt_text=prompt,
@@ -179,6 +180,7 @@ async def generate_historical_summaries(
 
         async with session_factory() as db:
             prompt = await build_prompt(db, session_key, window_start, window_end, previous_summary)
+            logger.info("This is the prompt: %s", prompt)
 
             if prompt is not None:
                 try:
@@ -195,6 +197,7 @@ async def generate_historical_summaries(
 
                     summary = Summary(
                         session_key=session_key,
+                        summary_type=SummaryType.window,
                         window_start=window_start,
                         window_end=window_end,
                         prompt_text=prompt,
