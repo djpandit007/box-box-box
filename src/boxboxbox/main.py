@@ -74,8 +74,9 @@ async def async_main() -> None:
                 print(existing_digest)
                 print(f"{'#' * 60}\n")
             else:
-                logger.info("No existing digest — ingesting historical data and generating summaries")
+                logger.info("Ingesting historical data for %s...", poller.session_info.session_name)
                 await poller.ingest_all()
+                logger.info("Data ingestion complete.")
 
                 await generate_historical_summaries(
                     session_factory=session_factory,
@@ -85,6 +86,7 @@ async def async_main() -> None:
                     interval_seconds=settings.SUMMARY_INTERVAL_SECONDS,
                 )
 
+                logger.info("Generating post-race digest...")
                 await generate_digest(session_factory, digest_agent, embedding_client, poller.session_key)
         else:
             # Live session — run real-time polling + summarisation loop

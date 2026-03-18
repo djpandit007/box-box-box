@@ -80,27 +80,30 @@ class SummarisationLoop:
 
             self._no_events_since = None
 
-            result = await self._agent.run(user_prompt=prompt)
-            summary_text = result.output
+            try:
+                result = await self._agent.run(user_prompt=prompt)
+                summary_text = result.output
 
-            embedding = await self._embedding_client.embed(summary_text)
+                embedding = await self._embedding_client.embed(summary_text)
 
-            summary = Summary(
-                session_key=self._session_key,
-                window_start=window_start,
-                window_end=window_end,
-                prompt_text=prompt,
-                summary_text=summary_text,
-                embedding=embedding,
-            )
-            db.add(summary)
-            await db.commit()
+                summary = Summary(
+                    session_key=self._session_key,
+                    window_start=window_start,
+                    window_end=window_end,
+                    prompt_text=prompt,
+                    summary_text=summary_text,
+                    embedding=embedding,
+                )
+                db.add(summary)
+                await db.commit()
 
-            logger.info("Summary: %s", summary_text[:120])
-            print(f"\n{'=' * 60}")
-            print(f"[{window_start.strftime('%H:%M:%S')} - {window_end.strftime('%H:%M:%S')}]")
-            print(summary_text)
-            print(f"{'=' * 60}\n")
+                logger.info("Summary: %s", summary_text[:120])
+                print(f"\n{'=' * 60}")
+                print(f"[{window_start.strftime('%H:%M:%S')} - {window_end.strftime('%H:%M:%S')}]")
+                print(summary_text)
+                print(f"{'=' * 60}\n")
+            except Exception:
+                logger.exception("Failed to generate summary for window %s - %s, skipping", window_start, window_end)
 
         self._last_window_end = window_end
         return False
@@ -145,41 +148,61 @@ async def generate_historical_summaries(
         logger.warning("No events found for session %d — nothing to summarise", session_key)
         return
 
-    logger.info("Generating historical summaries from %s to %s", earliest, latest)
+    total_seconds = (latest - earliest).total_seconds()
+    total_windows = max(1, int(total_seconds / interval_seconds) + 1)
+    logger.info(
+        "Generating summaries for %d windows (%s - %s)",
+        total_windows,
+        earliest.strftime("%H:%M:%S"),
+        latest.strftime("%H:%M:%S"),
+    )
 
     window_start = earliest
     previous_summary: str | None = None
+    window_num = 0
 
     while window_start < latest:
+        window_num += 1
         window_end = window_start + timedelta(seconds=interval_seconds)
         if window_end > latest:
             window_end = latest + timedelta(seconds=1)
+
+        logger.info(
+            "Generating summary %d/%d [%s - %s]",
+            window_num,
+            total_windows,
+            window_start.strftime("%H:%M:%S"),
+            window_end.strftime("%H:%M:%S"),
+        )
 
         async with session_factory() as db:
             prompt = await build_prompt(db, session_key, window_start, window_end, previous_summary)
 
             if prompt is not None:
-                result = await agent.run(user_prompt=prompt)
-                summary_text = result.output
+                try:
+                    result = await agent.run(user_prompt=prompt)
+                    summary_text = result.output
 
-                embedding = await embedding_client.embed(summary_text)
+                    embedding = await embedding_client.embed(summary_text)
 
-                summary = Summary(
-                    session_key=session_key,
-                    window_start=window_start,
-                    window_end=window_end,
-                    prompt_text=prompt,
-                    summary_text=summary_text,
-                    embedding=embedding,
-                )
-                db.add(summary)
-                await db.commit()
+                    summary = Summary(
+                        session_key=session_key,
+                        window_start=window_start,
+                        window_end=window_end,
+                        prompt_text=prompt,
+                        summary_text=summary_text,
+                        embedding=embedding,
+                    )
+                    db.add(summary)
+                    await db.commit()
 
-                previous_summary = summary_text
+                    previous_summary = summary_text
 
-                print(f"\n{'=' * 60}")
-                print(f"[{window_start.strftime('%H:%M:%S')} - {window_end.strftime('%H:%M:%S')}]")
-                print(summary_text)
-                print(f"{'=' * 60}\n")
+                    print(f"\n{'=' * 60}")
+                    print(f"[{window_start.strftime('%H:%M:%S')} - {window_end.strftime('%H:%M:%S')}]")
+                    print(summary_text)
+                    print(f"{'=' * 60}\n")
+                except Exception:
+                    logger.exception("Failed to generate summary for window %d/%d, skipping", window_num, total_windows)
 
         window_start = window_end
