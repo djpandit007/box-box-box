@@ -2,13 +2,13 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from boxboxbox.config import Settings
 from boxboxbox.db import get_engine, get_session_factory
 from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.ingestion.poller import Poller
-from boxboxbox.models import Summary
+from boxboxbox.models import Summary, SummaryType
 from boxboxbox.summariser.agent import create_digest_agent, create_summary_agent
 from boxboxbox.summariser.digest import generate_digest
 from boxboxbox.summariser.embeddings import EmbeddingClient
@@ -21,11 +21,10 @@ logger = logging.getLogger(__name__)
 async def _get_existing_digest(session_factory, session_key: int) -> str | None:
     """Return the digest text if one already exists for this session."""
     async with session_factory() as db:
-        # The digest has the widest time span (covers entire session).
         result = await db.execute(
             select(Summary.summary_text)
-            .where(Summary.session_key == session_key)
-            .order_by((func.extract("epoch", Summary.window_end) - func.extract("epoch", Summary.window_start)).desc())
+            .where(Summary.session_key == session_key, Summary.summary_type == SummaryType.digest)
+            .order_by(Summary.window_end.desc())
             .limit(1)
         )
         return result.scalar_one_or_none()
@@ -75,6 +74,7 @@ async def async_main() -> None:
                 logger.info("#" * 60)
                 logger.info(existing_digest)
                 logger.info("#" * 60)
+                logger.info("Existing digest found for session %s — exiting.", poller.session_key)
             else:
                 logger.info("Ingesting historical data for %s...", poller.session_info.session_name)
                 await poller.ingest_all()

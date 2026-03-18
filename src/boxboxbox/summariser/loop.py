@@ -8,7 +8,7 @@ from pydantic_ai import Agent
 from sqlalchemy import func, select
 
 from boxboxbox.db import SessionFactory
-from boxboxbox.models import RaceEvent, Summary
+from boxboxbox.models import RaceEvent, Session, Summary, SummaryType
 from boxboxbox.summariser.embeddings import EmbeddingClient
 from boxboxbox.summariser.prompt import build_prompt
 
@@ -96,6 +96,7 @@ class SummarisationLoop:
 
                 summary = Summary(
                     session_key=self._session_key,
+                    summary_type=SummaryType.window,
                     window_start=window_start,
                     window_end=window_end,
                     prompt_text=prompt,
@@ -111,12 +112,21 @@ class SummarisationLoop:
         return False
 
     async def _earliest_event_date(self) -> datetime | None:
-        """Find the earliest event date for this session to bootstrap the first window."""
+        """Find the race start time (prefer Session.date_start, fallback to earliest event)."""
         async with self._session_factory() as db:
-            result = await db.execute(
+            # Prefer the official race start time from the sessions table.
+            session_result = await db.execute(
+                select(Session.date_start).where(Session.session_key == self._session_key)
+            )
+            race_start = session_result.scalar_one_or_none()
+            if race_start is not None:
+                return race_start
+
+            # Fallback: earliest event date if for some reason we don't have the session row.
+            events_result = await db.execute(
                 select(func.min(RaceEvent.event_date)).where(RaceEvent.session_key == self._session_key)
             )
-            return result.scalar_one_or_none()
+            return events_result.scalar_one_or_none()
 
     async def _get_previous_summary(self, db) -> str | None:
         """Fetch the most recent summary text for narrative continuity."""
@@ -146,9 +156,35 @@ async def generate_historical_summaries(
         row = result.one()
         earliest, latest = row[0], row[1]
 
+        # Prefer the official race start time, if available.
+        session_result = await db.execute(select(Session.date_start).where(Session.session_key == session_key))
+        race_start = session_result.scalar_one_or_none()
+        if race_start is not None and earliest is not None:
+            # Start historical windows at the later of the first event and the race start,
+            # so we don't summarise pre-race telemetry as race action.
+            if race_start > earliest:
+                earliest = race_start
+
+        # Load any existing window summaries so we can display them and resume generation.
+        existing_result = await db.execute(
+            select(Summary)
+            .where(Summary.session_key == session_key, Summary.summary_type == SummaryType.window)
+            .order_by(Summary.window_start)
+        )
+        existing_summaries = existing_result.scalars().all()
+
     if earliest is None or latest is None:
         logger.warning("No events found for session %d — nothing to summarise", session_key)
         return
+
+    existing_by_start: dict[datetime, Summary] = {s.window_start: s for s in existing_summaries}
+    if existing_summaries:
+        logger.info("Found %d existing window summaries; reusing them.", len(existing_summaries))
+        for s in existing_summaries:
+            logger.info("=" * 60)
+            logger.info("[%s - %s] (existing)", s.window_start.strftime("%H:%M:%S"), s.window_end.strftime("%H:%M:%S"))
+            print(s.summary_text, end="\n\n", flush=True)
+        logger.info("=" * 60)
 
     total_seconds = (latest - earliest).total_seconds()
     total_windows = max(1, int(total_seconds / interval_seconds) + 1)
@@ -159,8 +195,18 @@ async def generate_historical_summaries(
         latest.strftime("%H:%M:%S"),
     )
 
-    window_start = earliest
-    previous_summary: str | None = None
+    if existing_summaries:
+        last = existing_summaries[-1]
+        window_start = last.window_end
+        previous_summary: str | None = last.summary_text
+        if window_start >= latest:
+            logger.info(
+                "All windows already summarised up to %s; nothing new to generate.", latest.strftime("%H:%M:%S")
+            )
+            return
+    else:
+        window_start = earliest
+        previous_summary = None
     window_num = 0
 
     while window_start < latest:
@@ -168,6 +214,20 @@ async def generate_historical_summaries(
         window_end = window_start + timedelta(seconds=interval_seconds)
         if window_end > latest:
             window_end = latest + timedelta(seconds=1)
+
+        existing = existing_by_start.get(window_start)
+        if existing is not None:
+            logger.info(
+                "Skipping summary %d/%d [%s - %s] (already exists)",
+                window_num,
+                total_windows,
+                window_start.strftime("%H:%M:%S"),
+                window_end.strftime("%H:%M:%S"),
+            )
+            print(existing.summary_text, end="\n\n", flush=True)
+            previous_summary = existing.summary_text
+            window_start = window_end
+            continue
 
         logger.info(
             "Generating summary %d/%d [%s - %s]",
@@ -195,6 +255,7 @@ async def generate_historical_summaries(
 
                     summary = Summary(
                         session_key=session_key,
+                        summary_type=SummaryType.window,
                         window_start=window_start,
                         window_end=window_end,
                         prompt_text=prompt,
@@ -205,6 +266,7 @@ async def generate_historical_summaries(
                     await db.commit()
 
                     previous_summary = summary_text
+                    existing_by_start[window_start] = summary
                 except Exception:
                     logger.exception("Failed to generate summary for window %d/%d, skipping", window_num, total_windows)
 

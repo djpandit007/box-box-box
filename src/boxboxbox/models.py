@@ -1,14 +1,20 @@
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Index, String, Text, text
+from sqlalchemy import Enum as SAEnum, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class SummaryType(str, Enum):
+    window = "window"
+    digest = "digest"
 
 
 class Session(Base):
@@ -81,6 +87,11 @@ class Summary(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     session_key: Mapped[int]
+    summary_type: Mapped[SummaryType] = mapped_column(
+        SAEnum(SummaryType, name="summary_type"),
+        server_default=SummaryType.window.value,
+        nullable=False,
+    )
     window_start: Mapped[datetime]
     window_end: Mapped[datetime]
     prompt_text: Mapped[str] = mapped_column(Text)

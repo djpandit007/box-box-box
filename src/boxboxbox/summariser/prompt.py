@@ -26,6 +26,7 @@ async def build_prompt(
     Returns None if there are no events in the window.
     """
     events_by_source = await _fetch_events(db, session_key, window_start, window_end)
+
     if not events_by_source:
         return None
 

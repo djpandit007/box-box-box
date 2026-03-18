@@ -41,11 +41,16 @@ class Poller:
         return self._session_response
 
     async def initialize(self) -> None:
-        sessions = await self._client.get("/sessions", {"session_key": self._session_key}, model=SessionResponse)
+        # Restrict to the race session so we get the actual race start time.
+        sessions: list[SessionResponse] = await self._client.get(
+            "/sessions",
+            {"session_key": self._session_key, "session_type": "Race"},
+            model=SessionResponse,
+        )
         if not sessions:
             raise RuntimeError("No session found for session_key=latest")
 
-        s = sessions[0]
+        s: SessionResponse = sessions[0]
         self._session_key = s.session_key
         self._session_response = s
         logger.info(
