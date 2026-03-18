@@ -263,18 +263,27 @@ class TestGenerateHistoricalSummariesResume:
         embedding_client = AsyncMock()
         embedding_client.embed = AsyncMock(return_value=[0.0] * 1536)
 
-        # First run: DB has events but no existing summaries.
+        # First run: DB has events but no existing summaries, and no explicit race_start.
         min_max_result_1 = MagicMock()
         min_max_result_1.one.return_value = (
             datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
             datetime(2026, 3, 15, 6, 1, tzinfo=UTC),
         )
+
+        # Session.date_start lookup should return None for this test.
+        session_date_result_1 = MagicMock()
+        session_date_result_1.scalar_one_or_none.return_value = None
+
         existing_empty_result = MagicMock()
         existing_empty_result.scalars.return_value.all.return_value = []
 
         # Second run: DB has same events and one existing summary covering the whole range.
         min_max_result_2 = MagicMock()
         min_max_result_2.one.return_value = min_max_result_1.one.return_value
+
+        # Session.date_start lookup again returns None.
+        session_date_result_2 = MagicMock()
+        session_date_result_2.scalar_one_or_none.return_value = None
 
         existing_one = MagicMock()
         existing_one.window_start = datetime(2026, 3, 15, 6, 0, tzinfo=UTC)
@@ -284,15 +293,19 @@ class TestGenerateHistoricalSummariesResume:
         existing_one_result = MagicMock()
         existing_one_result.scalars.return_value.all.return_value = [existing_one]
 
+        # generate_historical_summaries does three queries during initialisation:
+        # 1) min/max event dates
+        # 2) Session.date_start
+        # 3) existing window summaries
         db1_init = AsyncMock()
-        db1_init.execute = AsyncMock(side_effect=[min_max_result_1, existing_empty_result])
+        db1_init.execute = AsyncMock(side_effect=[min_max_result_1, session_date_result_1, existing_empty_result])
 
         db1_loop = AsyncMock()
         db1_loop.add = MagicMock()
         db1_loop.commit = AsyncMock()
 
         db2_init = AsyncMock()
-        db2_init.execute = AsyncMock(side_effect=[min_max_result_2, existing_one_result])
+        db2_init.execute = AsyncMock(side_effect=[min_max_result_2, session_date_result_2, existing_one_result])
 
         cm1_init = AsyncMock()
         cm1_init.__aenter__ = AsyncMock(return_value=db1_init)
