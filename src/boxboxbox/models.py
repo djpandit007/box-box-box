@@ -86,4 +86,4 @@ class Summary(Base):
     prompt_text: Mapped[str] = mapped_column(Text)
     summary_text: Mapped[str] = mapped_column(Text)
     audio_url: Mapped[Optional[str]] = mapped_column(Text)
-    embedding = mapped_column(Vector(1536), nullable=True)
+    embedding = mapped_column(Vector(2048), nullable=True)

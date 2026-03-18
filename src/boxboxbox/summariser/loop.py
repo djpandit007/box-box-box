@@ -1,0 +1,211 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import UTC, datetime, timedelta
+
+from pydantic_ai import Agent
+from sqlalchemy import func, select
+
+from boxboxbox.db import SessionFactory
+from boxboxbox.models import RaceEvent, Summary
+from boxboxbox.summariser.embeddings import EmbeddingClient
+from boxboxbox.summariser.prompt import build_prompt
+
+logger = logging.getLogger(__name__)
+
+
+class SummarisationLoop:
+    """Orchestrates 60-second summarisation cycles during a live race."""
+
+    def __init__(
+        self,
+        session_factory: SessionFactory,
+        agent: Agent,
+        embedding_client: EmbeddingClient,
+        session_key: int,
+        interval_seconds: int = 60,
+        grace_seconds: int = 300,
+    ):
+        self._session_factory = session_factory
+        self._agent = agent
+        self._embedding_client = embedding_client
+        self._session_key = session_key
+        self._interval = interval_seconds
+        self._grace_seconds = grace_seconds
+        self._last_window_end: datetime | None = None
+        self._no_events_since: datetime | None = None
+
+    async def run(self) -> None:
+        """Run the summarisation loop until the session ends."""
+        logger.info("Summarisation loop started (interval=%ds)", self._interval)
+        try:
+            while True:
+                session_ended = await self.summarise_once()
+                if session_ended:
+                    logger.info("Session appears to have ended")
+                    break
+                await asyncio.sleep(self._interval)
+        except asyncio.CancelledError:
+            logger.info("Summarisation loop cancelled")
+
+    async def summarise_once(self) -> bool:
+        """Generate one summary for the current window.
+
+        Returns True if the session appears to have ended (no events for grace period).
+        """
+        now = datetime.now(UTC)
+        window_end = now
+
+        if self._last_window_end is None:
+            window_start = await self._earliest_event_date()
+            if window_start is None:
+                # No events at all yet — wait for the poller to populate data
+                return False
+        else:
+            window_start = self._last_window_end
+
+        async with self._session_factory() as db:
+            previous_summary = await self._get_previous_summary(db)
+
+            prompt = await build_prompt(db, self._session_key, window_start, window_end, previous_summary)
+
+            if prompt is None:
+                if self._no_events_since is None:
+                    self._no_events_since = now
+                elif (now - self._no_events_since).total_seconds() > self._grace_seconds:
+                    return True
+                self._last_window_end = window_end
+                return False
+
+            self._no_events_since = None
+
+            try:
+                logger.info("=" * 60)
+                logger.info("[%s - %s]", window_start.strftime("%H:%M:%S"), window_end.strftime("%H:%M:%S"))
+                async with self._agent.run_stream(user_prompt=prompt) as result:
+                    async for text in result.stream_text(delta=True):
+                        print(text, end="", flush=True)
+                    summary_text = await result.get_output()
+                print()  # newline after streamed tokens
+                logger.info("=" * 60)
+
+                logger.info("Summary: %s", summary_text[:120])
+
+                embedding = await self._embedding_client.embed(summary_text)
+
+                summary = Summary(
+                    session_key=self._session_key,
+                    window_start=window_start,
+                    window_end=window_end,
+                    prompt_text=prompt,
+                    summary_text=summary_text,
+                    embedding=embedding,
+                )
+                db.add(summary)
+                await db.commit()
+            except Exception:
+                logger.exception("Failed to generate summary for window %s - %s, skipping", window_start, window_end)
+
+        self._last_window_end = window_end
+        return False
+
+    async def _earliest_event_date(self) -> datetime | None:
+        """Find the earliest event date for this session to bootstrap the first window."""
+        async with self._session_factory() as db:
+            result = await db.execute(
+                select(func.min(RaceEvent.event_date)).where(RaceEvent.session_key == self._session_key)
+            )
+            return result.scalar_one_or_none()
+
+    async def _get_previous_summary(self, db) -> str | None:
+        """Fetch the most recent summary text for narrative continuity."""
+        result = await db.execute(
+            select(Summary.summary_text)
+            .where(Summary.session_key == self._session_key)
+            .order_by(Summary.window_end.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+
+async def generate_historical_summaries(
+    session_factory: SessionFactory,
+    agent: Agent,
+    embedding_client: EmbeddingClient,
+    session_key: int,
+    interval_seconds: int = 60,
+) -> None:
+    """Generate all summaries for a finished session in batch."""
+    async with session_factory() as db:
+        result = await db.execute(
+            select(func.min(RaceEvent.event_date), func.max(RaceEvent.event_date)).where(
+                RaceEvent.session_key == session_key
+            )
+        )
+        row = result.one()
+        earliest, latest = row[0], row[1]
+
+    if earliest is None or latest is None:
+        logger.warning("No events found for session %d — nothing to summarise", session_key)
+        return
+
+    total_seconds = (latest - earliest).total_seconds()
+    total_windows = max(1, int(total_seconds / interval_seconds) + 1)
+    logger.info(
+        "Generating summaries for %d windows (%s - %s)",
+        total_windows,
+        earliest.strftime("%H:%M:%S"),
+        latest.strftime("%H:%M:%S"),
+    )
+
+    window_start = earliest
+    previous_summary: str | None = None
+    window_num = 0
+
+    while window_start < latest:
+        window_num += 1
+        window_end = window_start + timedelta(seconds=interval_seconds)
+        if window_end > latest:
+            window_end = latest + timedelta(seconds=1)
+
+        logger.info(
+            "Generating summary %d/%d [%s - %s]",
+            window_num,
+            total_windows,
+            window_start.strftime("%H:%M:%S"),
+            window_end.strftime("%H:%M:%S"),
+        )
+
+        async with session_factory() as db:
+            prompt = await build_prompt(db, session_key, window_start, window_end, previous_summary)
+
+            if prompt is not None:
+                try:
+                    logger.info("=" * 60)
+                    logger.info("[%s - %s]", window_start.strftime("%H:%M:%S"), window_end.strftime("%H:%M:%S"))
+                    async with agent.run_stream(user_prompt=prompt) as result:
+                        async for text in result.stream_text(delta=True):
+                            print(text, end="", flush=True)
+                        summary_text = await result.get_output()
+                    print()  # newline after streamed tokens
+                    logger.info("=" * 60)
+
+                    embedding = await embedding_client.embed(summary_text)
+
+                    summary = Summary(
+                        session_key=session_key,
+                        window_start=window_start,
+                        window_end=window_end,
+                        prompt_text=prompt,
+                        summary_text=summary_text,
+                        embedding=embedding,
+                    )
+                    db.add(summary)
+                    await db.commit()
+
+                    previous_summary = summary_text
+                except Exception:
+                    logger.exception("Failed to generate summary for window %d/%d, skipping", window_num, total_windows)
+
+        window_start = window_end

@@ -1,0 +1,7 @@
+<race_summaries session="{{ session_name }}" circuit="{{ circuit }}">
+{% for s in summaries %}
+<summary window="{{ s.window_start }}-{{ s.window_end }}">
+{{ s.text }}
+</summary>
+{% endfor %}
+</race_summaries>

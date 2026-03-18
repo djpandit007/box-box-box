@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from pydantic import BaseModel, ConfigDict
+from pydantic import field_validator
 
 
 class SessionResponse(BaseModel):
@@ -9,8 +12,8 @@ class SessionResponse(BaseModel):
     session_key: int
     session_type: str
     session_name: str
-    date_start: str
-    date_end: str
+    date_start: datetime
+    date_end: datetime
     meeting_key: int
     circuit_key: int
     circuit_short_name: str
@@ -20,6 +23,14 @@ class SessionResponse(BaseModel):
     location: str
     gmt_offset: str
     year: int
+
+    @field_validator("date_start", "date_end")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        # DB column types are TIMESTAMP WITHOUT TIME ZONE; normalize to UTC-naive.
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
 
 
 class DriverResponse(BaseModel):
@@ -44,7 +55,7 @@ class RaceControlResponse(BaseModel):
 
     meeting_key: int
     session_key: int
-    date: str
+    date: datetime
     driver_number: int | None = None
     lap_number: int | None = None
     category: str
@@ -54,26 +65,47 @@ class RaceControlResponse(BaseModel):
     qualifying_phase: str | None = None
     message: str
 
+    @field_validator("date")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+
 
 class PositionResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    date: str
+    date: datetime
     session_key: int
     position: int
     meeting_key: int
     driver_number: int
 
+    @field_validator("date")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+
 
 class IntervalResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    date: str
+    date: datetime
     session_key: int
     gap_to_leader: float | str | None = None
     interval: float | str | None = None
     meeting_key: int
     driver_number: int
+
+    @field_validator("date")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
 
 
 class LapResponse(BaseModel):
@@ -83,7 +115,7 @@ class LapResponse(BaseModel):
     session_key: int
     driver_number: int
     lap_number: int
-    date_start: str | None = None
+    date_start: datetime | None = None
     duration_sector_1: float | None = None
     duration_sector_2: float | None = None
     duration_sector_3: float | None = None
@@ -96,6 +128,15 @@ class LapResponse(BaseModel):
     segments_sector_3: list[int | None] | None = None
     st_speed: int | None = None
 
+    @field_validator("date_start")
+    @classmethod
+    def _normalize_dt(cls, v: datetime | None) -> datetime | None:
+        if v is None:
+            return None
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+
 
 class OvertakeResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -104,14 +145,21 @@ class OvertakeResponse(BaseModel):
     session_key: int
     overtaking_driver_number: int
     overtaken_driver_number: int
-    date: str
+    date: datetime
     position: int
+
+    @field_validator("date")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
 
 
 class PitResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    date: str
+    date: datetime
     session_key: int
     lap_number: int
     driver_number: int
@@ -119,6 +167,13 @@ class PitResponse(BaseModel):
     lane_duration: float
     pit_duration: float
     meeting_key: int
+
+    @field_validator("date")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
 
 
 class StintResponse(BaseModel):
@@ -137,7 +192,7 @@ class StintResponse(BaseModel):
 class WeatherResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    date: str
+    date: datetime
     session_key: int
     air_temperature: float
     humidity: float
@@ -148,15 +203,29 @@ class WeatherResponse(BaseModel):
     wind_speed: float
     track_temperature: float
 
+    @field_validator("date")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+
 
 class TeamRadioResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     driver_number: int
-    date: str
+    date: datetime
     recording_url: str
     session_key: int
     meeting_key: int
+
+    @field_validator("date")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
 
 
 ENDPOINT_MODELS: dict[str, type[BaseModel]] = {

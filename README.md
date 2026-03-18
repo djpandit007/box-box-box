@@ -12,22 +12,23 @@ OpenF1 has no live commentary text feed. Instead, we **synthesize narrative** fr
 
 1. **Poll** race control messages, positions, pit stops, overtakes, intervals, laps, weather, and team radio every 10 seconds
 2. **Transcribe** team radio MP3 clips via Groq Whisper
-3. **Summarise** all events from the last 60 seconds into a natural-language race update via LLM (OpenRouter + PydanticAI)
+3. **Summarise** all events from the last 60 seconds into a natural-language race update via LLM (OpenRouter + PydanticAI), using Jinja2-rendered XML-tagged prompts
 4. **Deliver** summaries in real-time via WebSocket, with optional TTS audio
 
 ## Tech Stack
 
-| Component      | Technology                                                                    |
-| -------------- | ----------------------------------------------------------------------------- |
-| Language       | Python 3.12+                                                                  |
-| Data Source    | [OpenF1 API](https://openf1.org)                                              |
-| Database       | PostgreSQL 16 + pgvector                                                      |
-| LLM            | [OpenRouter](https://openrouter.ai) via [PydanticAI](https://ai.pydantic.dev) |
-| Speech-to-Text | Groq Whisper                                                                  |
-| Text-to-Speech | Deepgram Aura                                                                 |
-| Frontend       | Pyodide (Python in WebAssembly)                                               |
-| Secrets        | [dotenvx](https://dotenvx.com)                                                |
-| Web Framework  | [FastAPI](https://fastapi.tiangolo.com) (REST API + WebSocket)                |
+| Component      | Technology                                                                              |
+| -------------- | --------------------------------------------------------------------------------------- |
+| Language       | Python 3.12+                                                                            |
+| Data Source    | [OpenF1 API](https://openf1.org)                                                        |
+| Database       | PostgreSQL 16 + pgvector                                                                |
+| LLM            | [OpenRouter](https://openrouter.ai) via [PydanticAI](https://ai.pydantic.dev)           |
+| Speech-to-Text | Groq Whisper                                                                            |
+| Text-to-Speech | Deepgram Aura                                                                           |
+| Frontend       | [htmx](https://htmx.org) + [Alpine.js](https://alpinejs.dev) + Jinja2 templates         |
+| Visualisations | [Pyodide](https://pyodide.org) (Python in WebAssembly) for client-side charts           |
+| Secrets        | [dotenvx](https://dotenvx.com)                                                          |
+| Web Framework  | [FastAPI](https://fastapi.tiangolo.com) (REST API + WebSocket + htmx HTML fragments)    |
 
 ## Project Structure
 
@@ -49,16 +50,27 @@ box-box-box/
 │   │   ├── poller.py               # Priority-based polling orchestrator
 │   │   ├── endpoints.py            # Endpoint configs & priorities
 │   │   └── schemas.py              # Pydantic models for API responses
+│   ├── summariser/
+│   │   ├── prompt.py               # Jinja2 prompt builder (DB queries + rendering)
+│   │   ├── agent.py                # PydanticAI agent config (summary + digest)
+│   │   ├── embeddings.py           # OpenRouter embedding client
+│   │   ├── loop.py                 # 60-second summarisation loop
+│   │   ├── digest.py               # Post-race digest generator
+│   │   └── templates/
+│   │       ├── summary_prompt.xml.jinja2   # XML-tagged prompt template
+│   │       └── digest_prompt.xml.jinja2    # Post-race digest prompt template
 │   ├── audio/                      # Phase 3 (not yet implemented)
-│   ├── summariser/                 # Phase 2 (not yet implemented)
 │   ├── delivery/                   # Phase 4 (not yet implemented)
-│   └── main.py                     # asyncio entrypoint
+│   └── main.py                     # asyncio entrypoint (poller + summariser)
 ├── tests/
 │   ├── fixtures/ci/                # Trimmed API fixtures (committed)
 │   ├── fixtures/{session_key}/     # Full API snapshots (gitignored)
 │   ├── test_client.py              # API client & fixture parsing tests
 │   ├── test_poller.py              # Polling orchestrator tests
-│   └── test_schemas.py             # Pydantic schema validation tests
+│   ├── test_schemas.py             # Pydantic schema validation tests
+│   ├── test_prompt.py              # Prompt builder tests
+│   ├── test_summariser.py          # Summarisation loop tests
+│   └── test_digest.py              # Post-race digest tests
 └── scripts/
     ├── snapshot_session.py         # Download session data for offline testing
     ├── init-db.sh                  # Docker entrypoint: create test DB
@@ -80,10 +92,10 @@ box-box-box/
 
 ### Phase 2: Summarisation Engine (MVP)
 
-- [ ] XML-tagged prompt builder (events grouped by type, previous summary for continuity)
-- [ ] 60-second summarisation loop via PydanticAI + OpenRouter
-- [ ] pgvector embeddings for semantic search
-- [ ] Post-race digest — final LLM call with all summaries as context to generate a shareable race report
+- [x] Jinja2-templated prompt builder (events grouped by type via XML tags, previous summary for continuity)
+- [x] 60-second summarisation loop via PydanticAI + OpenRouter
+- [x] pgvector embeddings for semantic search
+- [x] Post-race digest — final LLM call with all summaries as context to generate a shareable race report
 
 > **After Phase 2, we have a working product**: run the app, it polls OpenF1, and every 60s prints a narrative race summary.
 
@@ -95,20 +107,23 @@ box-box-box/
 
 ### Phase 4: Derived Intelligence + Delivery
 
-- [ ] WebSocket server for real-time push
-- [ ] REST API endpoints (sessions, summaries, semantic search, standings)
+- [ ] WebSocket server pushing pre-rendered HTML fragments (htmx `hx-swap-oob`)
+- [ ] REST API endpoints returning Jinja2 partials (sessions, summaries, semantic search, standings)
 - [ ] Battle detector — flag when two drivers' interval drops below ~1.5s and holds; resolve via `/overtakes`
 - [ ] Weather alerts — monitor `/weather` rainfall transitions (0→1) and trigger push notifications
 - [ ] Gap delta computation — track interval changes over time (closing/opening) for leaderboard enrichment
 
-### Phase 5: Frontend (Pyodide/WASM)
+### Phase 5: Frontend (htmx + Alpine.js + Pyodide)
 
-- [ ] Live leaderboard with gap deltas and sparkline trend charts (computed client-side)
+- [ ] htmx WebSocket integration — server pushes HTML fragments for timeline, leaderboard, and race control updates
+- [ ] Jinja2 template partials — reusable components for summary card, leaderboard row, radio clip card
+- [ ] Live leaderboard with gap deltas and sparkline trend charts (Pyodide/WASM on `<canvas>`)
 - [ ] Tyre strategy view — horizontal bars per driver showing compound + tyre age
-- [ ] Race control ticker — scrollable raw `/race_control` message feed
-- [ ] Team radio player — driver avatar, transcript, play button, mood tags
+- [ ] Race control ticker — SSE-driven scrollable `/race_control` message feed
+- [ ] Team radio player — Alpine.js for audio controls, transcript expand/collapse, mood tags
 - [ ] Battle highlights in the narrative timeline
-- [ ] Driver focus mode — filter summaries, radio, and gap charts to a selected driver
+- [ ] Driver focus mode (Alpine.js) — filter summaries, radio, and gap charts to a selected driver
+- [ ] Lazy-loading historical summaries via htmx (`hx-trigger="revealed"`)
 - [ ] Weather radar — ambient dry/damp/wet indicator
 
 ## Features
