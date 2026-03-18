@@ -238,7 +238,6 @@ async def generate_historical_summaries(
         )
 
         async with session_factory() as db:
-            print(f"This is the time window: {window_start.isoformat()} - {window_end.isoformat()}")
             prompt = await build_prompt(db, session_key, window_start, window_end, previous_summary)
 
             if prompt is not None:
