@@ -81,8 +81,16 @@ class SummarisationLoop:
             self._no_events_since = None
 
             try:
-                result = await self._agent.run(user_prompt=prompt)
-                summary_text = result.output
+                logger.info("=" * 60)
+                logger.info("[%s - %s]", window_start.strftime("%H:%M:%S"), window_end.strftime("%H:%M:%S"))
+                async with self._agent.run_stream(user_prompt=prompt) as result:
+                    async for text in result.stream_text(delta=True):
+                        print(text, end="", flush=True)
+                    summary_text = await result.get_output()
+                print()  # newline after streamed tokens
+                logger.info("=" * 60)
+
+                logger.info("Summary: %s", summary_text[:120])
 
                 embedding = await self._embedding_client.embed(summary_text)
 
@@ -96,12 +104,6 @@ class SummarisationLoop:
                 )
                 db.add(summary)
                 await db.commit()
-
-                logger.info("Summary: %s", summary_text[:120])
-                print(f"\n{'=' * 60}")
-                print(f"[{window_start.strftime('%H:%M:%S')} - {window_end.strftime('%H:%M:%S')}]")
-                print(summary_text)
-                print(f"{'=' * 60}\n")
             except Exception:
                 logger.exception("Failed to generate summary for window %s - %s, skipping", window_start, window_end)
 
@@ -180,8 +182,14 @@ async def generate_historical_summaries(
 
             if prompt is not None:
                 try:
-                    result = await agent.run(user_prompt=prompt)
-                    summary_text = result.output
+                    logger.info("=" * 60)
+                    logger.info("[%s - %s]", window_start.strftime("%H:%M:%S"), window_end.strftime("%H:%M:%S"))
+                    async with agent.run_stream(user_prompt=prompt) as result:
+                        async for text in result.stream_text(delta=True):
+                            print(text, end="", flush=True)
+                        summary_text = await result.get_output()
+                    print()  # newline after streamed tokens
+                    logger.info("=" * 60)
 
                     embedding = await embedding_client.embed(summary_text)
 
@@ -197,11 +205,6 @@ async def generate_historical_summaries(
                     await db.commit()
 
                     previous_summary = summary_text
-
-                    print(f"\n{'=' * 60}")
-                    print(f"[{window_start.strftime('%H:%M:%S')} - {window_end.strftime('%H:%M:%S')}]")
-                    print(summary_text)
-                    print(f"{'=' * 60}\n")
                 except Exception:
                     logger.exception("Failed to generate summary for window %d/%d, skipping", window_num, total_windows)
 

@@ -66,13 +66,15 @@ async def async_main() -> None:
 
             existing_digest = await _get_existing_digest(session_factory, poller.session_key)
             if existing_digest:
-                print(f"\n{'#' * 60}")
-                print(
-                    f"LAST RACE DIGEST: {poller.session_info.session_name} @ {poller.session_info.circuit_short_name}"
+                logger.info("#" * 60)
+                logger.info(
+                    "LAST RACE DIGEST: %s @ %s",
+                    poller.session_info.session_name,
+                    poller.session_info.circuit_short_name,
                 )
-                print(f"{'#' * 60}")
-                print(existing_digest)
-                print(f"{'#' * 60}\n")
+                logger.info("#" * 60)
+                logger.info(existing_digest)
+                logger.info("#" * 60)
             else:
                 logger.info("Ingesting historical data for %s...", poller.session_info.session_name)
                 await poller.ingest_all()

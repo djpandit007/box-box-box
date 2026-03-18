@@ -41,8 +41,17 @@ async def generate_digest(
 
         digest_prompt = _build_digest_prompt(summaries, session)
 
-        agent_result = await digest_agent.run(user_prompt=digest_prompt)
-        digest_text = agent_result.output
+        logger.info("#" * 60)
+        logger.info("POST-RACE DIGEST")
+        logger.info("#" * 60)
+        async with digest_agent.run_stream(user_prompt=digest_prompt) as agent_result:
+            async for text in agent_result.stream_text(delta=True):
+                print(text, end="", flush=True)
+            digest_text = await agent_result.get_output()
+        print()  # newline after streamed tokens
+        logger.info("#" * 60)
+
+        logger.info("Post-race digest generated")
 
         embedding = await embedding_client.embed(digest_text)
 
@@ -56,13 +65,6 @@ async def generate_digest(
         )
         db.add(digest)
         await db.commit()
-
-        logger.info("Post-race digest generated")
-        print(f"\n{'#' * 60}")
-        print("POST-RACE DIGEST")
-        print(f"{'#' * 60}")
-        print(digest_text)
-        print(f"{'#' * 60}\n")
 
         return digest_text
 

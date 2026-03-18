@@ -6,12 +6,27 @@ import pytest
 from boxboxbox.summariser.loop import SummarisationLoop
 
 
+def _make_stream_result(text: str):
+    """Create a mock that works as `async with agent.run_stream() as result`."""
+    stream_result = AsyncMock()
+
+    async def _stream_text(delta=False):
+        yield text
+
+    stream_result.stream_text = _stream_text
+    stream_result.get_output = AsyncMock(return_value=text)
+
+    cm = AsyncMock()
+    cm.__aenter__ = AsyncMock(return_value=stream_result)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return cm
+
+
 @pytest.fixture
 def mock_agent():
     agent = AsyncMock()
-    result = MagicMock()
-    result.output = "Hamilton takes the lead after a brilliant overtake on Verstappen."
-    agent.run = AsyncMock(return_value=result)
+    output_text = "Hamilton takes the lead after a brilliant overtake on Verstappen."
+    agent.run_stream = MagicMock(return_value=_make_stream_result(output_text))
     return agent
 
 
@@ -97,7 +112,7 @@ class TestSummariseOnce:
         ended = await loop.summarise_once()
 
         assert ended is False
-        mock_agent.run.assert_called_once()
+        mock_agent.run_stream.assert_called_once()
         mock_embedding_client.embed.assert_called_once()
         session.add.assert_called_once()
         session.commit.assert_called_once()
@@ -144,7 +159,7 @@ class TestSummariseOnce:
         ended = await loop.summarise_once()
 
         assert ended is False
-        mock_agent.run.assert_not_called()
+        mock_agent.run_stream.assert_not_called()
         mock_embedding_client.embed.assert_not_called()
 
 

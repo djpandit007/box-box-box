@@ -7,6 +7,22 @@ from boxboxbox.models import Session, Summary
 from boxboxbox.summariser.digest import _build_digest_prompt, generate_digest
 
 
+def _make_stream_result(text: str):
+    """Create a mock that works as `async with agent.run_stream() as result`."""
+    stream_result = AsyncMock()
+
+    async def _stream_text(delta=False):
+        yield text
+
+    stream_result.stream_text = _stream_text
+    stream_result.get_output = AsyncMock(return_value=text)
+
+    cm = AsyncMock()
+    cm.__aenter__ = AsyncMock(return_value=stream_result)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return cm
+
+
 def _make_summary(window_start: str, window_end: str, text: str) -> Summary:
     s = MagicMock(spec=Summary)
     s.window_start = datetime.fromisoformat(window_start)
@@ -56,9 +72,8 @@ class TestGenerateDigest:
     async def test_generates_and_stores_digest(self):
         # Mock agent
         agent = AsyncMock()
-        agent_result = MagicMock()
-        agent_result.output = "A thrilling race saw Hamilton take victory after a masterful strategy call."
-        agent.run = AsyncMock(return_value=agent_result)
+        output_text = "A thrilling race saw Hamilton take victory after a masterful strategy call."
+        agent.run_stream = MagicMock(return_value=_make_stream_result(output_text))
 
         # Mock embedding client
         embedding_client = AsyncMock()
@@ -91,7 +106,7 @@ class TestGenerateDigest:
         result = await generate_digest(make_session, agent, embedding_client, 12345)
 
         assert result == "A thrilling race saw Hamilton take victory after a masterful strategy call."
-        agent.run.assert_called_once()
+        agent.run_stream.assert_called_once()
         embedding_client.embed.assert_called_once()
         db.add.assert_called_once()
         db.commit.assert_called_once()
@@ -117,4 +132,4 @@ class TestGenerateDigest:
         result = await generate_digest(make_session, agent, embedding_client, 12345)
 
         assert result == ""
-        agent.run.assert_not_called()
+        agent.run_stream.assert_not_called()
