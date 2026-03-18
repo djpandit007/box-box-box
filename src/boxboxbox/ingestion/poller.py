@@ -11,6 +11,8 @@ from boxboxbox.ingestion.endpoints import ENDPOINTS, EndpointConfig, Priority
 from boxboxbox.ingestion.schemas import ENDPOINT_MODELS, DriverResponse, SessionResponse
 from boxboxbox.models import Driver, RaceEvent, RadioTranscript, Session
 
+__all__ = ["Poller"]
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,6 +21,7 @@ class Poller:
         self._client = client
         self._session_factory = session_factory
         self._session_key: str | int = "latest"
+        self._session_response: SessionResponse | None = None
         self._tick = 0
         self._last_dates: dict[str, str] = {}
         self._initialized = False
@@ -30,6 +33,13 @@ class Poller:
             raise RuntimeError("Poller not initialized — call initialize() first")
         return self._session_key  # type: ignore[return-value]
 
+    @property
+    def session_info(self) -> SessionResponse:
+        """Return the session metadata. Only valid after initialize()."""
+        if not self._initialized or self._session_response is None:
+            raise RuntimeError("Poller not initialized — call initialize() first")
+        return self._session_response
+
     async def initialize(self) -> None:
         sessions = await self._client.get("/sessions", {"session_key": self._session_key}, model=SessionResponse)
         if not sessions:
@@ -37,6 +47,7 @@ class Poller:
 
         s = sessions[0]
         self._session_key = s.session_key
+        self._session_response = s
         logger.info(
             "Tracking session %s: %s at %s",
             self._session_key,
@@ -174,6 +185,11 @@ class Poller:
                 ]
             )
             await db.execute(stmt)
+
+    async def ingest_all(self) -> None:
+        """One-shot fetch of all endpoints for the session (ignores priority tiers)."""
+        logger.info("Ingesting all data for session %s", self._session_key)
+        await asyncio.gather(*(self._fetch_and_store(ep) for ep in ENDPOINTS))
 
     async def run(self, poll_interval: int = 10) -> None:
         if not self._initialized:

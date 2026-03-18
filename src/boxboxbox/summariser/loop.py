@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from pydantic_ai import Agent
 from sqlalchemy import func, select
@@ -122,3 +122,64 @@ class SummarisationLoop:
             .limit(1)
         )
         return result.scalar_one_or_none()
+
+
+async def generate_historical_summaries(
+    session_factory: SessionFactory,
+    agent: Agent,
+    embedding_client: EmbeddingClient,
+    session_key: int,
+    interval_seconds: int = 60,
+) -> None:
+    """Generate all summaries for a finished session in batch."""
+    async with session_factory() as db:
+        result = await db.execute(
+            select(func.min(RaceEvent.event_date), func.max(RaceEvent.event_date)).where(
+                RaceEvent.session_key == session_key
+            )
+        )
+        row = result.one()
+        earliest, latest = row[0], row[1]
+
+    if earliest is None or latest is None:
+        logger.warning("No events found for session %d — nothing to summarise", session_key)
+        return
+
+    logger.info("Generating historical summaries from %s to %s", earliest, latest)
+
+    window_start = earliest
+    previous_summary: str | None = None
+
+    while window_start < latest:
+        window_end = window_start + timedelta(seconds=interval_seconds)
+        if window_end > latest:
+            window_end = latest + timedelta(seconds=1)
+
+        async with session_factory() as db:
+            prompt = await build_prompt(db, session_key, window_start, window_end, previous_summary)
+
+            if prompt is not None:
+                result = await agent.run(user_prompt=prompt)
+                summary_text = result.output
+
+                embedding = await embedding_client.embed(summary_text)
+
+                summary = Summary(
+                    session_key=session_key,
+                    window_start=window_start,
+                    window_end=window_end,
+                    prompt_text=prompt,
+                    summary_text=summary_text,
+                    embedding=embedding,
+                )
+                db.add(summary)
+                await db.commit()
+
+                previous_summary = summary_text
+
+                print(f"\n{'=' * 60}")
+                print(f"[{window_start.strftime('%H:%M:%S')} - {window_end.strftime('%H:%M:%S')}]")
+                print(summary_text)
+                print(f"{'=' * 60}\n")
+
+        window_start = window_end
