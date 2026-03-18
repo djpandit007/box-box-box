@@ -19,7 +19,7 @@ class EmbeddingClient:
         self._model = model
 
     async def embed(self, text: str) -> list[float]:
-        """Generate a 1536-dimension embedding vector for the given text."""
+        """Generate an embedding vector for the given text."""
         resp = await self._client.post(
             "/embeddings",
             json={"model": self._model, "input": text},
