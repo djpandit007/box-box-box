@@ -35,6 +35,12 @@ summary of what happened in this 60-second window of the race.
 - Do NOT list every position or lap time; weave the most notable into narrative
 - No filler openers: "During this window…", "In this 60-second period…", "The data shows…"
 - No passive voice
+
+## Sign-off
+- Always end with a standings line using acronyms from the positions data:
+  "Leading: VER | NOR | LEC"
+- Use exactly this format: "Leading: P1_ACR | P2_ACR | P3_ACR"
+- If position data is unavailable for the window, omit the sign-off line
 """
 
 DIGEST_SYSTEM_PROMPT = """\
