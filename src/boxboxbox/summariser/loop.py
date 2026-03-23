@@ -207,7 +207,7 @@ async def generate_historical_summaries(
     else:
         window_start = earliest
         previous_summary = None
-    window_num = 0
+    window_num = len(existing_summaries)
 
     while window_start < latest:
         window_num += 1

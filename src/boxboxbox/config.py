@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     # API keys
     OPENROUTER_API_KEY: str
-    GROQ_API_KEY: str = ""  # Phase 3
+    GROQ_API_KEY: str
     DEEPGRAM_API_KEY: str = ""  # Phase 3
 
     # App config
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     SUMMARY_INTERVAL_SECONDS: int = 60
 
     # Summariser config
-    SUMMARISER_MODEL: str = "openrouter:openrouter/hunter-alpha"
+    SUMMARISER_MODEL: str = "groq:moonshotai/kimi-k2-instruct-0905"
     EMBEDDING_MODEL: str = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
     SESSION_END_GRACE_SECONDS: int = 300
 
