@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import pathlib
 from collections.abc import Sequence
 
@@ -68,6 +69,14 @@ async def generate_digest(
         )
         db.add(digest)
         await db.commit()
+
+        if os.getenv("ELEVENLABS_API_KEY") or os.getenv("SARVAM_API_KEY"):
+            from boxboxbox.audio.tts import generate_audio
+
+            audio_url = await generate_audio(digest_text, session_key)
+            if audio_url:
+                digest.audio_url = audio_url
+                await db.commit()
 
         return digest_text
 

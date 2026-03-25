@@ -72,7 +72,10 @@ class TestGenerateDigest:
     async def test_generates_and_stores_digest(self):
         # Mock agent
         agent = AsyncMock()
-        output_text = "A thrilling race saw Hamilton take victory after a masterful strategy call."
+        output_text = (
+            "Lead: [dramatic] A thrilling race saw Hamilton take victory after a masterful strategy call.\n"
+            "Analyst: [analytical] The undercut was the decisive moment of the afternoon."
+        )
         agent.run_stream = MagicMock(return_value=_make_stream_result(output_text))
 
         # Mock embedding client
@@ -105,7 +108,7 @@ class TestGenerateDigest:
 
         result = await generate_digest(make_session, agent, embedding_client, 12345)
 
-        assert result == "A thrilling race saw Hamilton take victory after a masterful strategy call."
+        assert result == output_text
         agent.run_stream.assert_called_once()
         embedding_client.embed.assert_called_once()
         db.add.assert_called_once()

@@ -12,7 +12,16 @@ class Settings(BaseSettings):
     # API keys
     OPENROUTER_API_KEY: str
     GROQ_API_KEY: str
-    DEEPGRAM_API_KEY: str = ""  # Phase 3
+
+    # Audio / TTS (Phase 3)
+    TTS_LANGUAGE: str = "en"  # "en" | "hi" | "mr"
+    AUDIO_DIR: str = "data/audio"
+    ELEVENLABS_API_KEY: str = ""
+    ELEVENLABS_LEAD_VOICE_ID: str = ""
+    ELEVENLABS_ANALYST_VOICE_ID: str = ""
+    SARVAM_API_KEY: str = ""
+    SARVAM_VOICE: str = "anushka"  # bulbul:v2 default; for bulbul:v3 use "shubh"
+    SARVAM_MODEL: str = "bulbul:v2"
 
     # App config
     OPENF1_BASE_URL: str = "https://api.openf1.org/v1"
