@@ -55,7 +55,7 @@ Format rules (STRICT):
 - Each line starts with exactly "Lead: " or "Analyst: " (including the space after the colon)
 - Immediately after the prefix, include one ElevenLabs emotional delivery tag from this list:
   [dramatic], [excited], [analytical], [reflective], [warmly], [sighing], [laughing], [cautiously]
-- Write 25-30 alternating lines total
+- Write 18-22 alternating lines total
 - Each line is 1–3 sentences, past tense, spoken naturally as audio commentary
 - Do NOT add any text before the first "Lead:" line or after the last line
 - Do NOT use markdown, bullet points, or section headers
