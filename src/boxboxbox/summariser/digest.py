@@ -44,7 +44,7 @@ async def generate_digest(
 
             # Digest text exists but audio is missing — generate audio only.
             logger.info("Digest text exists but audio is missing, generating audio only.")
-            if settings.ELEVENLABS_API_KEY or settings.SARVAM_API_KEY:
+            if settings.ELEVENLABS_API_KEY:
                 audio_url = await generate_audio(existing_digest.summary_text, session_key)
                 if audio_url:
                     existing_digest.audio_url = audio_url
@@ -94,7 +94,7 @@ async def generate_digest(
         db.add(digest)
         await db.commit()
 
-        if settings.ELEVENLABS_API_KEY or settings.SARVAM_API_KEY:
+        if settings.ELEVENLABS_API_KEY:
             audio_url = await generate_audio(digest_text, session_key)
             if audio_url:
                 digest.audio_url = audio_url

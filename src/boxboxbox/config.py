@@ -19,10 +19,6 @@ class Settings(BaseSettings):
     ELEVENLABS_API_KEY: str = ""
     ELEVENLABS_LEAD_VOICE_ID: str = "bVM5MBBFUy5Uve0cooHn"
     ELEVENLABS_ANALYST_VOICE_ID: str = "56AoDkrOh6qfVPDXZ7Pt"
-    SARVAM_API_KEY: str = ""
-    SARVAM_VOICE: str = "anushka"  # bulbul:v2 default; for bulbul:v3 use "shubh"
-    SARVAM_MODEL: str = "bulbul:v2"
-
     # App config
     OPENF1_BASE_URL: str = "https://api.openf1.org/v1"
     POLL_INTERVAL_SECONDS: int = 10

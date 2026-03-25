@@ -65,7 +65,6 @@ class TestGenerateAudio:
             ELEVENLABS_API_KEY="",
             ELEVENLABS_LEAD_VOICE_ID="",
             ELEVENLABS_ANALYST_VOICE_ID="",
-            SARVAM_API_KEY="",
             AUDIO_DIR=str(tmp_path),
         )
         with patch("boxboxbox.audio.tts.settings", fake_settings):
@@ -96,74 +95,6 @@ class TestGenerateAudio:
         assert result is not None
         assert result == str(tmp_path / "digest_99.mp3")
         assert pathlib.Path(result).read_bytes() == fake_audio
-
-    @pytest.mark.asyncio
-    async def test_hindi_calls_sarvam(self, tmp_path):
-        fake_settings = SimpleNamespace(
-            TTS_LANGUAGE="hi",
-            SARVAM_API_KEY="sarvam-key",
-            SARVAM_VOICE="anushka",
-            SARVAM_MODEL="bulbul:v2",
-            ELEVENLABS_API_KEY="",
-            AUDIO_DIR=str(tmp_path),
-        )
-        translated = "हिंदी में अनुवाद।"
-        fake_audio = b"fake-wav-bytes"
-        with patch("boxboxbox.audio.tts.settings", fake_settings):
-            with patch(
-                "boxboxbox.audio.tts.sarvam_translate", new=AsyncMock(return_value=translated)
-            ) as mock_translate:
-                with patch("boxboxbox.audio.tts.sarvam_tts", new=AsyncMock(return_value=fake_audio)) as mock_tts:
-                    result = await generate_audio(_DIALOGUE, 42)
-
-        mock_translate.assert_awaited_once()
-        translate_args = mock_translate.call_args.args
-        assert translate_args[1] == "hi-IN"
-        assert "[dramatic]" not in translate_args[0]  # emotion tags stripped
-
-        mock_tts.assert_awaited_once()
-        tts_args = mock_tts.call_args.args
-        assert tts_args[0] == translated
-        assert tts_args[1] == "hi-IN"
-        assert result == str(tmp_path / "digest_42.wav")
-
-    @pytest.mark.asyncio
-    async def test_marathi_calls_sarvam(self, tmp_path):
-        fake_settings = SimpleNamespace(
-            TTS_LANGUAGE="mr",
-            SARVAM_API_KEY="sarvam-key",
-            SARVAM_VOICE="anushka",
-            SARVAM_MODEL="bulbul:v2",
-            ELEVENLABS_API_KEY="",
-            AUDIO_DIR=str(tmp_path),
-        )
-        with patch("boxboxbox.audio.tts.settings", fake_settings):
-            with patch("boxboxbox.audio.tts.sarvam_translate", new=AsyncMock(return_value="मराठी")) as mock_translate:
-                with patch("boxboxbox.audio.tts.sarvam_tts", new=AsyncMock(return_value=b"wav")) as _:
-                    await generate_audio(_DIALOGUE, 7)
-
-        assert mock_translate.call_args.args[1] == "mr-IN"
-
-    @pytest.mark.asyncio
-    async def test_sarvam_strips_emotion_tags_before_translate(self, tmp_path):
-        fake_settings = SimpleNamespace(
-            TTS_LANGUAGE="hi",
-            SARVAM_API_KEY="key",
-            SARVAM_VOICE="anushka",
-            SARVAM_MODEL="bulbul:v2",
-            ELEVENLABS_API_KEY="",
-            AUDIO_DIR=str(tmp_path),
-        )
-        with patch("boxboxbox.audio.tts.settings", fake_settings):
-            with patch("boxboxbox.audio.tts.sarvam_translate", new=AsyncMock(return_value="text")) as mock_translate:
-                with patch("boxboxbox.audio.tts.sarvam_tts", new=AsyncMock(return_value=b"wav")):
-                    await generate_audio(_DIALOGUE, 1)
-
-        plain_text_arg = mock_translate.call_args.args[0]
-        assert "[dramatic]" not in plain_text_arg
-        assert "[analytical]" not in plain_text_arg
-        assert "[excited]" not in plain_text_arg
-        assert "[reflective]" not in plain_text_arg
 
     @pytest.mark.asyncio
     async def test_audio_url_updated_in_db(self, tmp_path):

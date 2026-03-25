@@ -329,7 +329,6 @@ dependencies = [
     { name = "pgvector" },
     { name = "pydantic-ai" },
     { name = "pydantic-settings" },
-    { name = "sarvamai" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -354,7 +353,6 @@ requires-dist = [
     { name = "pgvector", specifier = ">=0.3" },
     { name = "pydantic-ai", specifier = ">=0.1" },
     { name = "pydantic-settings", specifier = ">=2.0" },
-    { name = "sarvamai", specifier = ">=0.1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
@@ -2830,22 +2828,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/05/04/74127fc843314818edfa81b5540e26dd537353b123a4edc563109d8f17dd/s3transfer-0.16.0.tar.gz", hash = "sha256:8e990f13268025792229cd52fa10cb7163744bf56e719e0b9cb925ab79abf920", size = 153827, upload-time = "2025-12-01T02:30:59.114Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fc/51/727abb13f44c1fcf6d145979e1535a35794db0f6e450a0cb46aa24732fe2/s3transfer-0.16.0-py3-none-any.whl", hash = "sha256:18e25d66fed509e3868dc1572b3f427ff947dd2c56f844a5bf09481ad3f3b2fe", size = 86830, upload-time = "2025-12-01T02:30:57.729Z" },
-]
-
-[[package]]
-name = "sarvamai"
-version = "0.1.27"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "pydantic-core" },
-    { name = "typing-extensions" },
-    { name = "websockets" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/02/ee/98b9255bb47d893687e255885db531e6b3f695031a74d7e5359f7a9e8216/sarvamai-0.1.27.tar.gz", hash = "sha256:b614cabab46d035f8937db4df4786f736438f82d1cd6f37446fb748f3bc6e1d2", size = 136819, upload-time = "2026-03-13T06:03:02.796Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/54/c6/d5d8f6d551029821b17dcbe8d40234318b9227dced68221b63525e493db3/sarvamai-0.1.27-py3-none-any.whl", hash = "sha256:70db8c343e4c4aea9c0eb69661d7060ae7b99828716ee562769568b266e0a697", size = 265697, upload-time = "2026-03-13T06:03:01.3Z" },
 ]
 
 [[package]]

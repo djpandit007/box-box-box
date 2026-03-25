@@ -63,7 +63,7 @@ async def async_main() -> None:
             )
 
             existing_digest = await _get_existing_digest(session_factory, poller.session_key)
-            audio_configured = bool(settings.ELEVENLABS_API_KEY or settings.SARVAM_API_KEY)
+            audio_configured = bool(settings.ELEVENLABS_API_KEY)
             if existing_digest and (existing_digest.audio_url or not audio_configured):
                 logger.info("#" * 60)
                 logger.info(
