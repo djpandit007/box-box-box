@@ -59,9 +59,16 @@ class TestStripEmotionTags:
 
 class TestGenerateAudio:
     @pytest.mark.asyncio
-    async def test_skipped_when_no_api_keys(self):
-        env = {"ELEVENLABS_API_KEY": "", "SARVAM_API_KEY": ""}
-        with patch.dict(os.environ, env, clear=False):
+    async def test_skipped_when_no_api_keys(self, tmp_path):
+        fake_settings = SimpleNamespace(
+            TTS_LANGUAGE="en",
+            ELEVENLABS_API_KEY="",
+            ELEVENLABS_LEAD_VOICE_ID="",
+            ELEVENLABS_ANALYST_VOICE_ID="",
+            SARVAM_API_KEY="",
+            AUDIO_DIR=str(tmp_path),
+        )
+        with patch("boxboxbox.audio.tts.settings", fake_settings):
             result = await generate_audio(_DIALOGUE, 12345)
         assert result is None
 
