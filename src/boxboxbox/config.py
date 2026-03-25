@@ -42,3 +42,6 @@ class Settings(BaseSettings):
                 f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@localhost:5432/{self.POSTGRES_DB}"
             )
         return self
+
+
+settings = Settings()  # ty: ignore[missing-argument]

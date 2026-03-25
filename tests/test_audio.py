@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -66,15 +67,15 @@ class TestGenerateAudio:
 
     @pytest.mark.asyncio
     async def test_english_calls_elevenlabs(self, tmp_path):
-        env = {
-            "TTS_LANGUAGE": "en",
-            "ELEVENLABS_API_KEY": "test-key",
-            "ELEVENLABS_LEAD_VOICE_ID": "lead-id",
-            "ELEVENLABS_ANALYST_VOICE_ID": "analyst-id",
-            "AUDIO_DIR": str(tmp_path),
-        }
+        fake_settings = SimpleNamespace(
+            TTS_LANGUAGE="en",
+            ELEVENLABS_API_KEY="test-key",
+            ELEVENLABS_LEAD_VOICE_ID="lead-id",
+            ELEVENLABS_ANALYST_VOICE_ID="analyst-id",
+            AUDIO_DIR=str(tmp_path),
+        )
         fake_audio = b"fake-mp3-bytes"
-        with patch.dict(os.environ, env, clear=False):
+        with patch("boxboxbox.audio.tts.settings", fake_settings):
             with patch("boxboxbox.audio.tts.elevenlabs_tts", new=AsyncMock(return_value=fake_audio)) as mock_tts:
                 result = await generate_audio(_DIALOGUE, 99)
 
@@ -91,17 +92,17 @@ class TestGenerateAudio:
 
     @pytest.mark.asyncio
     async def test_hindi_calls_sarvam(self, tmp_path):
-        env = {
-            "TTS_LANGUAGE": "hi",
-            "SARVAM_API_KEY": "sarvam-key",
-            "SARVAM_VOICE": "anushka",
-            "SARVAM_MODEL": "bulbul:v2",
-            "ELEVENLABS_API_KEY": "",
-            "AUDIO_DIR": str(tmp_path),
-        }
+        fake_settings = SimpleNamespace(
+            TTS_LANGUAGE="hi",
+            SARVAM_API_KEY="sarvam-key",
+            SARVAM_VOICE="anushka",
+            SARVAM_MODEL="bulbul:v2",
+            ELEVENLABS_API_KEY="",
+            AUDIO_DIR=str(tmp_path),
+        )
         translated = "हिंदी में अनुवाद।"
         fake_audio = b"fake-wav-bytes"
-        with patch.dict(os.environ, env, clear=False):
+        with patch("boxboxbox.audio.tts.settings", fake_settings):
             with patch(
                 "boxboxbox.audio.tts.sarvam_translate", new=AsyncMock(return_value=translated)
             ) as mock_translate:
@@ -121,13 +122,15 @@ class TestGenerateAudio:
 
     @pytest.mark.asyncio
     async def test_marathi_calls_sarvam(self, tmp_path):
-        env = {
-            "TTS_LANGUAGE": "mr",
-            "SARVAM_API_KEY": "sarvam-key",
-            "ELEVENLABS_API_KEY": "",
-            "AUDIO_DIR": str(tmp_path),
-        }
-        with patch.dict(os.environ, env, clear=False):
+        fake_settings = SimpleNamespace(
+            TTS_LANGUAGE="mr",
+            SARVAM_API_KEY="sarvam-key",
+            SARVAM_VOICE="anushka",
+            SARVAM_MODEL="bulbul:v2",
+            ELEVENLABS_API_KEY="",
+            AUDIO_DIR=str(tmp_path),
+        )
+        with patch("boxboxbox.audio.tts.settings", fake_settings):
             with patch("boxboxbox.audio.tts.sarvam_translate", new=AsyncMock(return_value="मराठी")) as mock_translate:
                 with patch("boxboxbox.audio.tts.sarvam_tts", new=AsyncMock(return_value=b"wav")) as _:
                     await generate_audio(_DIALOGUE, 7)
@@ -136,13 +139,15 @@ class TestGenerateAudio:
 
     @pytest.mark.asyncio
     async def test_sarvam_strips_emotion_tags_before_translate(self, tmp_path):
-        env = {
-            "TTS_LANGUAGE": "hi",
-            "SARVAM_API_KEY": "key",
-            "ELEVENLABS_API_KEY": "",
-            "AUDIO_DIR": str(tmp_path),
-        }
-        with patch.dict(os.environ, env, clear=False):
+        fake_settings = SimpleNamespace(
+            TTS_LANGUAGE="hi",
+            SARVAM_API_KEY="key",
+            SARVAM_VOICE="anushka",
+            SARVAM_MODEL="bulbul:v2",
+            ELEVENLABS_API_KEY="",
+            AUDIO_DIR=str(tmp_path),
+        )
+        with patch("boxboxbox.audio.tts.settings", fake_settings):
             with patch("boxboxbox.audio.tts.sarvam_translate", new=AsyncMock(return_value="text")) as mock_translate:
                 with patch("boxboxbox.audio.tts.sarvam_tts", new=AsyncMock(return_value=b"wav")):
                     await generate_audio(_DIALOGUE, 1)
@@ -155,14 +160,14 @@ class TestGenerateAudio:
 
     @pytest.mark.asyncio
     async def test_audio_url_updated_in_db(self, tmp_path):
-        env = {
-            "TTS_LANGUAGE": "en",
-            "ELEVENLABS_API_KEY": "key",
-            "ELEVENLABS_LEAD_VOICE_ID": "l",
-            "ELEVENLABS_ANALYST_VOICE_ID": "a",
-            "AUDIO_DIR": str(tmp_path),
-        }
-        with patch.dict(os.environ, env, clear=False):
+        fake_settings = SimpleNamespace(
+            TTS_LANGUAGE="en",
+            ELEVENLABS_API_KEY="key",
+            ELEVENLABS_LEAD_VOICE_ID="l",
+            ELEVENLABS_ANALYST_VOICE_ID="a",
+            AUDIO_DIR=str(tmp_path),
+        )
+        with patch("boxboxbox.audio.tts.settings", fake_settings):
             with patch("boxboxbox.audio.tts.elevenlabs_tts", new=AsyncMock(return_value=b"mp3")):
                 result = await generate_audio(_DIALOGUE, 55)
         assert result is not None

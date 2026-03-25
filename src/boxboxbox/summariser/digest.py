@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import pathlib
 from collections.abc import Sequence
 
@@ -9,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader
 from pydantic_ai import Agent
 from sqlalchemy import select
 
+from boxboxbox.config import settings
 from boxboxbox.db import SessionFactory
 from boxboxbox.models import Session, Summary, SummaryType
 from boxboxbox.summariser.embeddings import EmbeddingClient
@@ -70,7 +70,7 @@ async def generate_digest(
         db.add(digest)
         await db.commit()
 
-        if os.getenv("ELEVENLABS_API_KEY") or os.getenv("SARVAM_API_KEY"):
+        if settings.ELEVENLABS_API_KEY or settings.SARVAM_API_KEY:
             from boxboxbox.audio.tts import generate_audio
 
             audio_url = await generate_audio(digest_text, session_key)

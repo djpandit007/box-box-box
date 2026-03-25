@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 
-from boxboxbox.config import Settings
+from boxboxbox.config import settings
 from boxboxbox.db import get_engine, get_session_factory
 from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.ingestion.poller import Poller
@@ -37,7 +37,6 @@ def _session_is_finished(date_end: datetime) -> bool:
 
 
 async def async_main() -> None:
-    settings = Settings()  # ty: ignore[missing-argument]
     engine = get_engine(settings.DATABASE_URL)
     session_factory = get_session_factory(engine)
     client = OpenF1Client(settings.OPENF1_BASE_URL)

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-import os
 import pathlib
 import re
 
 from boxboxbox.audio.elevenlabs import elevenlabs_tts
 from boxboxbox.audio.sarvam import sarvam_translate, sarvam_tts
+from boxboxbox.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +42,8 @@ async def generate_audio(summary_text: str, session_key: int) -> str | None:
     Routes to ElevenLabs (English) or Sarvam AI (Hindi/Marathi) based on TTS_LANGUAGE env var.
     Returns the local file path, or None if API keys are not configured.
     """
-    language = os.getenv("TTS_LANGUAGE", "en")
-    audio_dir = os.getenv("AUDIO_DIR", "data/audio")
+    language = settings.TTS_LANGUAGE
+    audio_dir = settings.AUDIO_DIR
 
     lines = parse_dialogue_lines(summary_text)
     if not lines:
@@ -53,9 +53,9 @@ async def generate_audio(summary_text: str, session_key: int) -> str | None:
     pathlib.Path(audio_dir).mkdir(parents=True, exist_ok=True)
 
     if language == "en":
-        api_key = os.getenv("ELEVENLABS_API_KEY", "")
-        lead_voice_id = os.getenv("ELEVENLABS_LEAD_VOICE_ID", "")
-        analyst_voice_id = os.getenv("ELEVENLABS_ANALYST_VOICE_ID", "")
+        api_key = settings.ELEVENLABS_API_KEY
+        lead_voice_id = settings.ELEVENLABS_LEAD_VOICE_ID
+        analyst_voice_id = settings.ELEVENLABS_ANALYST_VOICE_ID
 
         if not api_key:
             logger.warning("ELEVENLABS_API_KEY not set — skipping audio generation")
@@ -65,9 +65,9 @@ async def generate_audio(summary_text: str, session_key: int) -> str | None:
         audio_bytes = await elevenlabs_tts(lines, api_key, lead_voice_id, analyst_voice_id)
         file_path = pathlib.Path(audio_dir) / f"digest_{session_key}.mp3"
     else:
-        sarvam_key = os.getenv("SARVAM_API_KEY", "")
-        sarvam_voice = os.getenv("SARVAM_VOICE", "anushka")
-        sarvam_model = os.getenv("SARVAM_MODEL", "bulbul:v2")
+        sarvam_key = settings.SARVAM_API_KEY
+        sarvam_voice = settings.SARVAM_VOICE
+        sarvam_model = settings.SARVAM_MODEL
         lang_code = _LANG_TO_SARVAM.get(language, "hi-IN")
 
         if not sarvam_key:
