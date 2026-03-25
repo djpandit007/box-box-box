@@ -17,18 +17,17 @@ OpenF1 has no live commentary text feed. Instead, we **synthesize narrative** fr
 
 ## Tech Stack
 
-| Component      | Technology                                                                              |
-| -------------- | --------------------------------------------------------------------------------------- |
-| Language       | Python 3.12+                                                                            |
-| Data Source    | [OpenF1 API](https://openf1.org)                                                        |
-| Database       | PostgreSQL 16 + pgvector                                                                |
-| LLM            | [OpenRouter](https://openrouter.ai) via [PydanticAI](https://ai.pydantic.dev)           |
-| Speech-to-Text | Groq Whisper                                                                            |
-| Text-to-Speech | Deepgram Aura                                                                           |
-| Frontend       | [htmx](https://htmx.org) + [Alpine.js](https://alpinejs.dev) + Jinja2 templates         |
-| Visualisations | [Pyodide](https://pyodide.org) (Python in WebAssembly) for client-side charts           |
-| Secrets        | [dotenvx](https://dotenvx.com)                                                          |
-| Web Framework  | [FastAPI](https://fastapi.tiangolo.com) (REST API + WebSocket + htmx HTML fragments)    |
+| Component      | Technology                                                                           |
+| -------------- | ------------------------------------------------------------------------------------ |
+| Language       | Python 3.12+                                                                         |
+| Data Source    | [OpenF1 API](https://openf1.org)                                                     |
+| Database       | PostgreSQL 16 + pgvector                                                             |
+| LLM            | [OpenRouter](https://openrouter.ai) via [PydanticAI](https://ai.pydantic.dev)        |
+| Text-to-Speech | [ElevenLabs](https://elevenlabs.io) (English dialogue)                               |
+| Frontend       | [htmx](https://htmx.org) + [Alpine.js](https://alpinejs.dev) + Jinja2 templates      |
+| Visualisations | [Pyodide](https://pyodide.org) (Python in WebAssembly) for client-side charts        |
+| Secrets        | [dotenvx](https://dotenvx.com)                                                       |
+| Web Framework  | [FastAPI](https://fastapi.tiangolo.com) (REST API + WebSocket + htmx HTML fragments) |
 
 ## Project Structure
 
@@ -59,7 +58,9 @@ box-box-box/
 │   │   └── templates/
 │   │       ├── summary_prompt.xml.jinja2   # XML-tagged prompt template
 │   │       └── digest_prompt.xml.jinja2    # Post-race digest prompt template
-│   ├── audio/                      # Phase 3 (not yet implemented)
+│   ├── audio/
+│   │   ├── tts.py                  # TTS dispatcher (parse dialogue, route to backend, save file)
+│   │   └── elevenlabs.py           # ElevenLabs Text to Dialogue API client
 │   ├── delivery/                   # Phase 4 (not yet implemented)
 │   └── main.py                     # asyncio entrypoint (poller + summariser)
 ├── tests/
@@ -101,9 +102,11 @@ box-box-box/
 
 ### Phase 3: Audio Pipeline
 
-- [ ] Team radio MP3 download + Groq Whisper transcription
-- [ ] Team radio mood tagging — LLM classification per clip (frustrated, celebratory, strategic, funny)
-- [ ] Text-to-speech output via Deepgram Aura
+> **Note**: OpenF1 does not expose team radio MP3 streams. Radio download, transcription, and mood
+> tagging are deferred until the API makes them available. Phase 3 focuses on TTS delivery of the
+> post-race digest.
+
+- [x] Text-to-speech for post-race digest via ElevenLabs Text to Dialogue API (English — two-commentator exchange with emotional delivery)
 
 ### Phase 4: Derived Intelligence + Delivery
 
@@ -148,7 +151,7 @@ box-box-box/
 
 ### Engagement — what makes someone open this again next race
 
-- **Driver focus mode** — pick "your" driver and filter everything: summaries mentioning that driver, radio from that team only, gap chart relative to their position. Personalisation turns a tool into *your* tool.
+- **Driver focus mode** — pick "your" driver and filter everything: summaries mentioning that driver, radio from that team only, gap chart relative to their position. Personalisation turns a tool into _your_ tool.
 - **Post-race digest** — after the session ends, one final LLM call with all summaries as context generates a 2-3 paragraph race report. Stored, shareable — the thing someone sends to their WhatsApp group.
 
 ## Polling Strategy
@@ -198,7 +201,6 @@ curl -sfS https://dotenvx.sh/install.sh | sh
 # Set your secrets (encrypts automatically)
 dotenvx set OPENROUTER_API_KEY "sk-or-..."
 dotenvx set GROQ_API_KEY "gsk_..."
-dotenvx set DEEPGRAM_API_KEY "..."
 ```
 
 This creates:
@@ -208,14 +210,17 @@ This creates:
 
 ### Required variables
 
-| Variable                   | Description                                            |
-| -------------------------- | ------------------------------------------------------ |
-| `OPENROUTER_API_KEY`       | LLM API key via OpenRouter                             |
-| `GROQ_API_KEY`             | Groq Whisper for team radio transcription              |
-| `DEEPGRAM_API_KEY`         | Deepgram Aura for TTS                                  |
-| `OPENF1_BASE_URL`          | OpenF1 API base (default: `https://api.openf1.org/v1`) |
-| `POLL_INTERVAL_SECONDS`    | Polling frequency (default: `10`)                      |
-| `SUMMARY_INTERVAL_SECONDS` | Summary generation interval (default: `60`)            |
+| Variable                      | Description                                                 |
+| ----------------------------- | ----------------------------------------------------------- |
+| `OPENROUTER_API_KEY`          | LLM API key via OpenRouter                                  |
+| `OPENF1_BASE_URL`             | OpenF1 API base (default: `https://api.openf1.org/v1`)      |
+| `POLL_INTERVAL_SECONDS`       | Polling frequency (default: `10`)                           |
+| `SUMMARY_INTERVAL_SECONDS`    | Summary generation interval (default: `60`)                 |
+| `TTS_LANGUAGE`                | TTS language (default: `en`)                                |
+| `AUDIO_DIR`                   | Directory for generated audio files (default: `data/audio`) |
+| `ELEVENLABS_API_KEY`          | ElevenLabs API key (English TTS)                            |
+| `ELEVENLABS_LEAD_VOICE_ID`    | ElevenLabs voice ID for the Lead commentator                |
+| `ELEVENLABS_ANALYST_VOICE_ID` | ElevenLabs voice ID for the Analyst commentator             |
 
 ## Development
 

@@ -12,8 +12,13 @@ class Settings(BaseSettings):
     # API keys
     OPENROUTER_API_KEY: str
     GROQ_API_KEY: str
-    DEEPGRAM_API_KEY: str = ""  # Phase 3
 
+    # Audio / TTS (Phase 3)
+    TTS_LANGUAGE: str = "en"  # "en" | "hi" | "mr"
+    AUDIO_DIR: str = "data/audio"
+    ELEVENLABS_API_KEY: str = ""
+    ELEVENLABS_LEAD_VOICE_ID: str = "bVM5MBBFUy5Uve0cooHn"
+    ELEVENLABS_ANALYST_VOICE_ID: str = "56AoDkrOh6qfVPDXZ7Pt"
     # App config
     OPENF1_BASE_URL: str = "https://api.openf1.org/v1"
     POLL_INTERVAL_SECONDS: int = 10
@@ -21,6 +26,7 @@ class Settings(BaseSettings):
 
     # Summariser config
     SUMMARISER_MODEL: str = "groq:moonshotai/kimi-k2-instruct-0905"
+    DIGEST_MODEL: str = "groq:llama-3.3-70b-versatile"
     EMBEDDING_MODEL: str = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
     SESSION_END_GRACE_SECONDS: int = 300
 
@@ -33,3 +39,6 @@ class Settings(BaseSettings):
                 f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@localhost:5432/{self.POSTGRES_DB}"
             )
         return self
+
+
+settings = Settings()  # ty: ignore[missing-argument]

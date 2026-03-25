@@ -31,7 +31,8 @@ class Poller:
         """Return the resolved session key. Only valid after initialize()."""
         if not self._initialized:
             raise RuntimeError("Poller not initialized — call initialize() first")
-        return self._session_key  # type: ignore[return-value]
+        assert isinstance(self._session_key, int)
+        return self._session_key
 
     @property
     def session_info(self) -> SessionResponse:

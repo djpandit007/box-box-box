@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -72,7 +72,10 @@ class TestGenerateDigest:
     async def test_generates_and_stores_digest(self):
         # Mock agent
         agent = AsyncMock()
-        output_text = "A thrilling race saw Hamilton take victory after a masterful strategy call."
+        output_text = (
+            "Lead: [dramatic] A thrilling race saw Hamilton take victory after a masterful strategy call.\n"
+            "Analyst: [analytical] The undercut was the decisive moment of the afternoon."
+        )
         agent.run_stream = MagicMock(return_value=_make_stream_result(output_text))
 
         # Mock embedding client
@@ -85,6 +88,9 @@ class TestGenerateDigest:
 
         session_obj = _make_session("Race", "Melbourne")
 
+        no_existing_digest = MagicMock()
+        no_existing_digest.scalar_one_or_none.return_value = None
+
         summaries_result = MagicMock()
         summaries_result.scalars.return_value.all.return_value = [summary1, summary2]
 
@@ -92,7 +98,7 @@ class TestGenerateDigest:
         session_result.scalar_one_or_none.return_value = session_obj
 
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[summaries_result, session_result])
+        db.execute = AsyncMock(side_effect=[no_existing_digest, summaries_result, session_result])
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -103,9 +109,11 @@ class TestGenerateDigest:
         def make_session():
             return factory_cm
 
-        result = await generate_digest(make_session, agent, embedding_client, 12345)
+        with patch("boxboxbox.summariser.digest.generate_audio", new_callable=AsyncMock) as mock_audio:
+            mock_audio.return_value = None
+            result = await generate_digest(make_session, agent, embedding_client, 12345)
 
-        assert result == "A thrilling race saw Hamilton take victory after a masterful strategy call."
+        assert result == output_text
         agent.run_stream.assert_called_once()
         embedding_client.embed.assert_called_once()
         db.add.assert_called_once()
@@ -116,11 +124,14 @@ class TestGenerateDigest:
         agent = AsyncMock()
         embedding_client = AsyncMock()
 
+        no_existing_digest = MagicMock()
+        no_existing_digest.scalar_one_or_none.return_value = None
+
         summaries_result = MagicMock()
         summaries_result.scalars.return_value.all.return_value = []
 
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=summaries_result)
+        db.execute = AsyncMock(side_effect=[no_existing_digest, summaries_result])
 
         factory_cm = AsyncMock()
         factory_cm.__aenter__ = AsyncMock(return_value=db)
@@ -133,3 +144,60 @@ class TestGenerateDigest:
 
         assert result == ""
         agent.run_stream.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reuses_existing_digest_with_audio(self):
+        agent = AsyncMock()
+        embedding_client = AsyncMock()
+
+        existing = MagicMock(spec=Summary)
+        existing.summary_text = "Existing digest text."
+        existing.audio_url = "/audio/digest_12345.mp3"
+
+        existing_result = MagicMock()
+        existing_result.scalar_one_or_none.return_value = existing
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=existing_result)
+
+        factory_cm = AsyncMock()
+        factory_cm.__aenter__ = AsyncMock(return_value=db)
+        factory_cm.__aexit__ = AsyncMock(return_value=False)
+
+        result = await generate_digest(lambda: factory_cm, agent, embedding_client, 12345)
+
+        assert result == "Existing digest text."
+        agent.run_stream.assert_not_called()
+        embedding_client.embed.assert_not_called()
+        db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_generates_audio_for_existing_digest_without_audio(self):
+        agent = AsyncMock()
+        embedding_client = AsyncMock()
+
+        existing = MagicMock(spec=Summary)
+        existing.summary_text = "Existing digest text."
+        existing.audio_url = None
+
+        existing_result = MagicMock()
+        existing_result.scalar_one_or_none.return_value = existing
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=existing_result)
+        db.commit = AsyncMock()
+
+        factory_cm = AsyncMock()
+        factory_cm.__aenter__ = AsyncMock(return_value=db)
+        factory_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("boxboxbox.summariser.digest.generate_audio", new_callable=AsyncMock) as mock_audio:
+            mock_audio.return_value = "/audio/digest_12345.mp3"
+            result = await generate_digest(lambda: factory_cm, agent, embedding_client, 12345)
+
+        assert result == "Existing digest text."
+        agent.run_stream.assert_not_called()
+        embedding_client.embed.assert_not_called()
+        db.add.assert_not_called()
+        mock_audio.assert_called_once_with("Existing digest text.", 12345)
+        db.commit.assert_called_once()
