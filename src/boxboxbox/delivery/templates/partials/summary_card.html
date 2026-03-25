@@ -1,0 +1,11 @@
+<div id="summary-timeline" hx-swap-oob="beforeend">
+  <article class="summary-card">
+    <header class="summary-card__time">
+      {{ summary.window_start.strftime('%H:%M') }} &ndash; {{ summary.window_end.strftime('%H:%M') }}
+    </header>
+    <p class="summary-card__text">{{ summary.summary_text }}</p>
+    {% if summary.audio_url %}
+    <audio controls src="{{ summary.audio_url }}" class="summary-card__audio"></audio>
+    {% endif %}
+  </article>
+</div>

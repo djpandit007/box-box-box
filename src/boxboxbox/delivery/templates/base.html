@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>box-box-box &mdash; Live Race</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 1rem; }
+    .layout { display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem; }
+    .leaderboard { width: 100%; border-collapse: collapse; }
+    .leaderboard th, .leaderboard td { padding: .4rem .6rem; text-align: left; border-bottom: 1px solid #ddd; }
+    .battle { background: #fff3cd; }
+    .trend-closing { color: green; }
+    .trend-opening { color: red; }
+    .summary-card { border-left: 3px solid #e10600; padding: .5rem 1rem; margin-bottom: 1rem; }
+    .summary-card__time { font-size: .75rem; color: #888; margin-bottom: .3rem; }
+    .summary-card__audio { width: 100%; margin-top: .4rem; }
+    #alerts { position: fixed; top: 1rem; right: 1rem; width: 280px; }
+    .alert { background: #e10600; color: white; border-radius: 4px; padding: .6rem 1rem; margin-bottom: .5rem; }
+  </style>
+</head>
+<body>
+  <h1>box-box-box</h1>
+
+  <div id="alerts"></div>
+
+  <div class="layout">
+    <div>
+      <h2>Standings</h2>
+      {% include "partials/leaderboard.html" %}
+    </div>
+    <div>
+      <h2>Race Timeline</h2>
+      <div id="summary-timeline"></div>
+    </div>
+  </div>
+
+  <!-- htmx + WebSocket extension -->
+  <script src="https://unpkg.com/htmx.org@2/dist/htmx.min.js"></script>
+  <script src="https://unpkg.com/htmx-ext-ws@2/ws.js"></script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+
+  <!-- WebSocket connection -->
+  <script>
+    const wsUrl = "ws://" + window.location.host + "/ws";
+    const socket = new WebSocket(wsUrl);
+
+    socket.addEventListener("message", function(event) {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "html") {
+        // Let htmx process the OOB swap
+        htmx.process(document.createElement("div"));
+        const tmp = document.createElement("div");
+        tmp.innerHTML = msg.html;
+        htmx.process(tmp);
+        document.body.appendChild(tmp);
+        htmx.trigger(tmp, "htmx:oobBeforeSwap");
+        // Use htmx built-in OOB swap
+        htmx.swap(tmp, msg.html, { swapStyle: "none" });
+      } else if (msg.type === "snapshot" && window._pyodideReady) {
+        window._processSnapshot(msg);
+      }
+    });
+  </script>
+
+  <!-- Pyodide -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js"></script>
+  <script>
+    window._pyodideReady = false;
+
+    async function initPyodide() {
+      const pyodide = await loadPyodide();
+      await pyodide.runPythonAsync(`
+BATTLE_THRESHOLD = 1.5
+STABLE_TOLERANCE = 0.1
+
+prev_snapshot = None
+
+def update_leaderboard_row(driver_number, interval, delta, trend):
+    from js import document
+    row = document.querySelector(f"tr[data-driver='{driver_number}']")
+    if row is None:
+        return
+    interval_cell = row.querySelector(".interval")
+    trend_cell = row.querySelector(".trend")
+    if interval_cell:
+        interval_cell.textContent = f"{interval:.3f}" if interval is not None else ""
+    if trend_cell:
+        trend_cell.className = "trend trend-" + trend
+        trend_cell.textContent = "\\u25b2" if trend == "closing" else "\\u25bc" if trend == "opening" else "\\u2013"
+
+def show_battle_alert(leader, chaser, gap):
+    from js import document
+    alert_id = f"battle-{leader}-{chaser}"
+    if document.getElementById(alert_id):
+        return
+    alerts = document.getElementById("alerts")
+    div = document.createElement("div")
+    div.id = alert_id
+    div.className = "alert"
+    div.textContent = f"Battle! P{leader} vs P{chaser} — {gap:.2f}s"
+    alerts.appendChild(div)
+
+def clear_battle_alert(leader, chaser):
+    from js import document
+    el = document.getElementById(f"battle-{leader}-{chaser}")
+    if el:
+        el.remove()
+
+def show_weather_alert():
+    from js import document
+    if document.getElementById("weather-alert"):
+        return
+    alerts = document.getElementById("alerts")
+    div = document.createElement("div")
+    div.id = "weather-alert"
+    div.className = "alert"
+    div.textContent = "Rain has started!"
+    alerts.appendChild(div)
+
+def build_leaderboard(snapshot):
+    from js import document
+    positions = {p["driver_number"]: p["position"] for p in snapshot["positions"]}
+    intervals = {i["driver_number"]: i["interval"] for i in snapshot["intervals"]}
+    sorted_drivers = sorted(positions, key=lambda d: positions[d])
+    tbody = document.getElementById("leaderboard-body")
+    tbody.innerHTML = ""
+    for driver_number in sorted_drivers:
+        pos = positions[driver_number]
+        interval = intervals.get(driver_number)
+        tr = document.createElement("tr")
+        tr.setAttribute("data-driver", str(driver_number))
+        tr.innerHTML = (
+            f"<td>{pos}</td>"
+            f"<td>#{driver_number}</td>"
+            f"<td></td>"
+            f"<td class='interval'>{f'{interval:.3f}' if interval is not None else ''}</td>"
+            f"<td class='trend trend-stable'>&ndash;</td>"
+        )
+        tbody.appendChild(tr)
+
+def process_snapshot(snapshot):
+    global prev_snapshot
+    positions = {p["driver_number"]: p["position"] for p in snapshot["positions"]}
+    intervals = {i["driver_number"]: i["interval"] for i in snapshot["intervals"]}
+
+    # Initial leaderboard build or rebuild on first snapshot
+    if prev_snapshot is None:
+        build_leaderboard(snapshot)
+
+    # Gap deltas
+    if prev_snapshot:
+        prev_intervals = {i["driver_number"]: i["interval"] for i in prev_snapshot["intervals"]}
+        for driver, interval in intervals.items():
+            if interval is None:
+                continue
+            prev = prev_intervals.get(driver)
+            if prev is not None:
+                delta = interval - prev
+                trend = "closing" if delta < -STABLE_TOLERANCE else "opening" if delta > STABLE_TOLERANCE else "stable"
+                update_leaderboard_row(driver, interval, delta, trend)
+
+    # Battle detection
+    sorted_drivers = sorted(positions, key=lambda d: positions[d])
+    for i in range(len(sorted_drivers) - 1):
+        leader = sorted_drivers[i]
+        chaser = sorted_drivers[i + 1]
+        gap = intervals.get(chaser)
+        if gap is not None and gap < BATTLE_THRESHOLD:
+            show_battle_alert(leader, chaser, gap)
+        else:
+            clear_battle_alert(leader, chaser)
+
+    # Weather alert
+    if prev_snapshot and snapshot["weather"]["rainfall"] == 1 and prev_snapshot["weather"]["rainfall"] == 0:
+        show_weather_alert()
+
+    prev_snapshot = snapshot
+`);
+
+      window._processSnapshot = function(msg) {
+        pyodide.globals.set("_snapshot", msg);
+        pyodide.runPython("process_snapshot(_snapshot.to_py())");
+      };
+      window._pyodideReady = true;
+    }
+
+    initPyodide().catch(console.error);
+  </script>
+</body>
+</html>
