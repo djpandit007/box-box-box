@@ -21,4 +21,5 @@ async def elevenlabs_tts(
     inputs = [DialogueInput(text=text, voice_id=voice_map[speaker]) for speaker, text in lines]
 
     client = AsyncElevenLabs(api_key=api_key)
-    return await client.text_to_dialogue.convert(inputs=inputs)
+    chunks = [chunk async for chunk in client.text_to_dialogue.convert(inputs=inputs)]
+    return b"".join(chunks)

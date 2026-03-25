@@ -18,11 +18,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger(__name__)
 
 
-async def _get_existing_digest(session_factory, session_key: int) -> str | None:
-    """Return the digest text if one already exists for this session."""
+async def _get_existing_digest(session_factory, session_key: int) -> Summary | None:
+    """Return the existing digest Summary if one exists for this session."""
     async with session_factory() as db:
         result = await db.execute(
-            select(Summary.summary_text)
+            select(Summary)
             .where(Summary.session_key == session_key, Summary.summary_type == SummaryType.digest)
             .order_by(Summary.window_end.desc())
             .limit(1)
@@ -63,7 +63,8 @@ async def async_main() -> None:
             )
 
             existing_digest = await _get_existing_digest(session_factory, poller.session_key)
-            if existing_digest:
+            audio_configured = bool(settings.ELEVENLABS_API_KEY or settings.SARVAM_API_KEY)
+            if existing_digest and (existing_digest.audio_url or not audio_configured):
                 logger.info("#" * 60)
                 logger.info(
                     "LAST RACE DIGEST: %s @ %s",
@@ -71,9 +72,14 @@ async def async_main() -> None:
                     poller.session_info.circuit_short_name,
                 )
                 logger.info("#" * 60)
-                logger.info(existing_digest)
+                logger.info(existing_digest.summary_text)
                 logger.info("#" * 60)
                 logger.info("Existing digest found for session %s — exiting.", poller.session_key)
+            elif existing_digest:
+                logger.info(
+                    "Digest text exists but audio missing for session %s — generating audio.", poller.session_key
+                )
+                await generate_digest(session_factory, digest_agent, embedding_client, poller.session_key)
             else:
                 logger.info("Ingesting historical data for %s...", poller.session_info.session_name)
                 await poller.ingest_all()
