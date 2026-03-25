@@ -23,8 +23,7 @@ OpenF1 has no live commentary text feed. Instead, we **synthesize narrative** fr
 | Data Source    | [OpenF1 API](https://openf1.org)                                                        |
 | Database       | PostgreSQL 16 + pgvector                                                                |
 | LLM            | [OpenRouter](https://openrouter.ai) via [PydanticAI](https://ai.pydantic.dev)           |
-| Speech-to-Text | Groq Whisper                                                                            |
-| Text-to-Speech | Deepgram Aura                                                                           |
+| Text-to-Speech | [ElevenLabs](https://elevenlabs.io) (English dialogue) + [Sarvam AI](https://sarvam.ai) (Hindi/Marathi) |
 | Frontend       | [htmx](https://htmx.org) + [Alpine.js](https://alpinejs.dev) + Jinja2 templates         |
 | Visualisations | [Pyodide](https://pyodide.org) (Python in WebAssembly) for client-side charts           |
 | Secrets        | [dotenvx](https://dotenvx.com)                                                          |
@@ -59,7 +58,10 @@ box-box-box/
 │   │   └── templates/
 │   │       ├── summary_prompt.xml.jinja2   # XML-tagged prompt template
 │   │       └── digest_prompt.xml.jinja2    # Post-race digest prompt template
-│   ├── audio/                      # Phase 3 (not yet implemented)
+│   ├── audio/
+│   │   ├── tts.py                  # TTS dispatcher (parse dialogue, route to backend, save file)
+│   │   ├── elevenlabs.py           # ElevenLabs Text to Dialogue API client
+│   │   └── sarvam.py               # Sarvam AI translate + TTS client
 │   ├── delivery/                   # Phase 4 (not yet implemented)
 │   └── main.py                     # asyncio entrypoint (poller + summariser)
 ├── tests/
@@ -101,9 +103,12 @@ box-box-box/
 
 ### Phase 3: Audio Pipeline
 
-- [ ] Team radio MP3 download + Groq Whisper transcription
-- [ ] Team radio mood tagging — LLM classification per clip (frustrated, celebratory, strategic, funny)
-- [ ] Text-to-speech output via Deepgram Aura
+> **Note**: OpenF1 does not expose team radio MP3 streams. Radio download, transcription, and mood
+> tagging are deferred until the API makes them available. Phase 3 focuses on TTS delivery of the
+> post-race digest.
+
+- [x] Text-to-speech for post-race digest via ElevenLabs Text to Dialogue API (English — two-commentator exchange with emotional delivery)
+- [x] Text-to-speech for post-race digest via Sarvam AI (Hindi / Marathi — translate then TTS)
 
 ### Phase 4: Derived Intelligence + Delivery
 
@@ -208,14 +213,19 @@ This creates:
 
 ### Required variables
 
-| Variable                   | Description                                            |
-| -------------------------- | ------------------------------------------------------ |
-| `OPENROUTER_API_KEY`       | LLM API key via OpenRouter                             |
-| `GROQ_API_KEY`             | Groq Whisper for team radio transcription              |
-| `DEEPGRAM_API_KEY`         | Deepgram Aura for TTS                                  |
-| `OPENF1_BASE_URL`          | OpenF1 API base (default: `https://api.openf1.org/v1`) |
-| `POLL_INTERVAL_SECONDS`    | Polling frequency (default: `10`)                      |
-| `SUMMARY_INTERVAL_SECONDS` | Summary generation interval (default: `60`)            |
+| Variable                       | Description                                                       |
+| ------------------------------ | ----------------------------------------------------------------- |
+| `OPENROUTER_API_KEY`           | LLM API key via OpenRouter                                        |
+| `OPENF1_BASE_URL`              | OpenF1 API base (default: `https://api.openf1.org/v1`)            |
+| `POLL_INTERVAL_SECONDS`        | Polling frequency (default: `10`)                                 |
+| `SUMMARY_INTERVAL_SECONDS`     | Summary generation interval (default: `60`)                       |
+| `TTS_LANGUAGE`                 | TTS language: `en`, `hi`, or `mr` (default: `en`)                |
+| `AUDIO_DIR`                    | Directory for generated audio files (default: `data/audio`)       |
+| `ELEVENLABS_API_KEY`           | ElevenLabs API key (English TTS)                                  |
+| `ELEVENLABS_LEAD_VOICE_ID`     | ElevenLabs voice ID for the Lead commentator                      |
+| `ELEVENLABS_ANALYST_VOICE_ID`  | ElevenLabs voice ID for the Analyst commentator                   |
+| `SARVAM_API_KEY`               | Sarvam AI API key (Hindi/Marathi TTS)                             |
+| `SARVAM_VOICE`                 | Sarvam voice model (default: `meera`)                             |
 
 ## Development
 
