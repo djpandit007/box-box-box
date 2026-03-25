@@ -28,6 +28,29 @@ async def generate_digest(
 ) -> str:
     """Generate a post-race digest from all summaries and store it."""
     async with session_factory() as db:
+        # Check if a digest already exists for this session.
+        existing_result = await db.execute(
+            select(Summary)
+            .where(Summary.session_key == session_key, Summary.summary_type == SummaryType.digest)
+            .order_by(Summary.window_end.desc())
+            .limit(1)
+        )
+        existing_digest = existing_result.scalar_one_or_none()
+
+        if existing_digest is not None:
+            if existing_digest.audio_url:
+                logger.info("Digest already exists with audio, reusing.")
+                return existing_digest.summary_text
+
+            # Digest text exists but audio is missing — generate audio only.
+            logger.info("Digest text exists but audio is missing, generating audio only.")
+            if settings.ELEVENLABS_API_KEY or settings.SARVAM_API_KEY:
+                audio_url = await generate_audio(existing_digest.summary_text, session_key)
+                if audio_url:
+                    existing_digest.audio_url = audio_url
+                    await db.commit()
+            return existing_digest.summary_text
+
         result = await db.execute(
             select(Summary)
             .where(Summary.session_key == session_key, Summary.summary_type == SummaryType.window)
