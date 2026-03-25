@@ -60,6 +60,10 @@ Format rules (STRICT):
 - Do NOT add any text before the first "Lead:" line or after the last line
 - Do NOT use markdown, bullet points, or section headers
 - Keep driver names natural (full name on first mention, surname after)
+- The second-to-last line must be Analyst delivering a final tactical or statistical observation
+- The final line must be Lead with [dramatic] or [reflective] delivering a single sign-off sentence \
+that names the winner and closes the broadcast (e.g. "Max Verstappen wins in Melbourne — a masterclass \
+from lights to flag.")
 
 Example format:
 Lead: [dramatic] Max Verstappen dominated from lights to flag at the Australian Grand Prix, \
