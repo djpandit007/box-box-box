@@ -110,11 +110,11 @@ box-box-box/
 
 ### Phase 4: Derived Intelligence + Delivery
 
-- [ ] WebSocket server pushing pre-rendered HTML fragments (htmx `hx-swap-oob`)
-- [ ] REST API endpoints returning Jinja2 partials (sessions, summaries, semantic search, standings)
-- [ ] Battle detector — flag when two drivers' interval drops below ~1.5s and holds; resolve via `/overtakes`
-- [ ] Weather alerts — monitor `/weather` rainfall transitions (0→1) and trigger push notifications
-- [ ] Gap delta computation — track interval changes over time (closing/opening) for leaderboard enrichment
+- [x] WebSocket server pushing pre-rendered HTML fragments (htmx `hx-swap-oob`)
+- [x] REST API endpoints returning Jinja2 partials (sessions, summaries, semantic search, standings)
+- [x] Battle detector — flag when two drivers' interval drops below ~1.5s and holds; resolve via `/overtakes`
+- [x] Weather alerts — monitor `/weather` rainfall transitions (0→1) and trigger push notifications
+- [x] Gap delta computation — track interval changes over time (closing/opening) for leaderboard enrichment
 
 ### Phase 5: Frontend (htmx + Alpine.js + Pyodide)
 
