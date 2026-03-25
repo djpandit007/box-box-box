@@ -321,6 +321,7 @@ dependencies = [
     { name = "aiolimiter" },
     { name = "alembic" },
     { name = "asyncpg" },
+    { name = "elevenlabs" },
     { name = "fastapi" },
     { name = "greenlet" },
     { name = "httpx" },
@@ -328,14 +329,9 @@ dependencies = [
     { name = "pgvector" },
     { name = "pydantic-ai" },
     { name = "pydantic-settings" },
+    { name = "sarvamai" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-audio = [
-    { name = "deepgram-sdk" },
-    { name = "groq" },
 ]
 
 [package.dev-dependencies]
@@ -350,19 +346,18 @@ requires-dist = [
     { name = "aiolimiter", specifier = ">=1.1" },
     { name = "alembic", specifier = ">=1.13" },
     { name = "asyncpg", specifier = ">=0.29" },
-    { name = "deepgram-sdk", marker = "extra == 'audio'", specifier = ">=3.0" },
+    { name = "elevenlabs", specifier = ">=2.0" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "greenlet", specifier = ">=3.0" },
-    { name = "groq", marker = "extra == 'audio'", specifier = ">=0.5" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "pgvector", specifier = ">=0.3" },
     { name = "pydantic-ai", specifier = ">=0.1" },
     { name = "pydantic-settings", specifier = ">=2.0" },
+    { name = "sarvamai", specifier = ">=0.1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["audio"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -649,22 +644,6 @@ wheels = [
 ]
 
 [[package]]
-name = "deepgram-sdk"
-version = "6.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "pydantic-core" },
-    { name = "typing-extensions" },
-    { name = "websockets" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/73/46/6dc45de574d766a20853452d7beccf17cb0cfeb685a0f03460f1fe49b48e/deepgram_sdk-6.0.1.tar.gz", hash = "sha256:88558a43d6173a861c8b6d6491b9ee8805679fb09fb81ef51eeb6871dad77767", size = 176743, upload-time = "2026-02-24T13:52:17.163Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/58/a4/53b9075816edc566694aed014d9864febedf232677b74f5d30bdde64b5de/deepgram_sdk-6.0.1-py3-none-any.whl", hash = "sha256:1b33d621b1c0b1d7a6a7b46fdc393aef4212e670521fada99764f5fb3f9d55fd", size = 490751, upload-time = "2026-02-24T13:52:15.998Z" },
-]
-
-[[package]]
 name = "distro"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -698,6 +677,23 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ae/b6/03bb70946330e88ffec97aefd3ea75ba575cb2e762061e0e62a213befee8/docutils-0.22.4.tar.gz", hash = "sha256:4db53b1fde9abecbb74d91230d32ab626d94f6badfc575d6db9194a49df29968", size = 2291750, upload-time = "2025-12-18T19:00:26.443Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl", hash = "sha256:d0013f540772d1420576855455d050a2180186c91c15779301ac2ccb3eeb68de", size = 633196, upload-time = "2025-12-18T19:00:18.077Z" },
+]
+
+[[package]]
+name = "elevenlabs"
+version = "2.40.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "requests" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0a/5c/d1445f6f7958cf12cba297a44879e6054b7423cd0b2f437ac36bf0493c87/elevenlabs-2.40.0.tar.gz", hash = "sha256:84eaf10819950cbacc643b5ecf80400e5b67bb3af79394be9ee70e8d361d4b27", size = 554860, upload-time = "2026-03-23T11:30:41.742Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/62/f08985526677486460a86428a933cfe7a2f0b3659698b2bb333d587d96a4/elevenlabs-2.40.0-py3-none-any.whl", hash = "sha256:56e7939da45eff180e9deeeb84ff25dd616a47d55f179f102d964fc8207146f5", size = 1495785, upload-time = "2026-03-23T11:30:39.888Z" },
 ]
 
 [[package]]
@@ -1044,6 +1040,7 @@ wheels = [
 name = "griffelib"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ad/06/eccbd311c9e2b3ca45dbc063b93134c57a1ccc7607c5e545264ad092c4a9/griffelib-2.0.0.tar.gz", hash = "sha256:e504d637a089f5cab9b5daf18f7645970509bf4f53eda8d79ed71cce8bd97934", size = 166312, upload-time = "2026-03-23T21:06:55.954Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4d/51/c936033e16d12b627ea334aaaaf42229c37620d0f15593456ab69ab48161/griffelib-2.0.0-py3-none-any.whl", hash = "sha256:01284878c966508b6d6f1dbff9b6fa607bc062d8261c5c7253cb285b06422a7f", size = 142004, upload-time = "2026-02-09T19:09:40.561Z" },
 ]
@@ -2833,6 +2830,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/05/04/74127fc843314818edfa81b5540e26dd537353b123a4edc563109d8f17dd/s3transfer-0.16.0.tar.gz", hash = "sha256:8e990f13268025792229cd52fa10cb7163744bf56e719e0b9cb925ab79abf920", size = 153827, upload-time = "2025-12-01T02:30:59.114Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fc/51/727abb13f44c1fcf6d145979e1535a35794db0f6e450a0cb46aa24732fe2/s3transfer-0.16.0-py3-none-any.whl", hash = "sha256:18e25d66fed509e3868dc1572b3f427ff947dd2c56f844a5bf09481ad3f3b2fe", size = 86830, upload-time = "2025-12-01T02:30:57.729Z" },
+]
+
+[[package]]
+name = "sarvamai"
+version = "0.1.27"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/02/ee/98b9255bb47d893687e255885db531e6b3f695031a74d7e5359f7a9e8216/sarvamai-0.1.27.tar.gz", hash = "sha256:b614cabab46d035f8937db4df4786f736438f82d1cd6f37446fb748f3bc6e1d2", size = 136819, upload-time = "2026-03-13T06:03:02.796Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/c6/d5d8f6d551029821b17dcbe8d40234318b9227dced68221b63525e493db3/sarvamai-0.1.27-py3-none-any.whl", hash = "sha256:70db8c343e4c4aea9c0eb69661d7060ae7b99828716ee562769568b266e0a697", size = 265697, upload-time = "2026-03-13T06:03:01.3Z" },
 ]
 
 [[package]]
