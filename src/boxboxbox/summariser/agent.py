@@ -55,7 +55,7 @@ Format rules (STRICT):
 - Each line starts with exactly "Lead: " or "Analyst: " (including the space after the colon)
 - Immediately after the prefix, include one ElevenLabs emotional delivery tag from this list:
   [dramatic], [excited], [analytical], [reflective], [warmly], [sighing], [laughing], [cautiously]
-- Write 8–14 alternating lines total
+- Write 25-30 alternating lines total
 - Each line is 1–3 sentences, past tense, spoken naturally as audio commentary
 - Do NOT add any text before the first "Lead:" line or after the last line
 - Do NOT use markdown, bullet points, or section headers
@@ -87,5 +87,5 @@ def create_digest_agent(model: str) -> Agent:
         model,
         output_type=str,
         system_prompt=DIGEST_SYSTEM_PROMPT,
-        model_settings=ModelSettings(temperature=0.7, max_tokens=2000),
+        model_settings=ModelSettings(temperature=0.7, max_tokens=16_000),
     )

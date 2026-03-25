@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # Summariser config
     SUMMARISER_MODEL: str = "groq:moonshotai/kimi-k2-instruct-0905"
-    DIGEST_MODEL: str = "groq:moonshotai/kimi-k2-instruct-0905"
+    DIGEST_MODEL: str = "groq:llama-3.3-70b-versatile"
     EMBEDDING_MODEL: str = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
     SESSION_END_GRACE_SECONDS: int = 300
 
