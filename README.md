@@ -17,17 +17,17 @@ OpenF1 has no live commentary text feed. Instead, we **synthesize narrative** fr
 
 ## Tech Stack
 
-| Component      | Technology                                                                              |
-| -------------- | --------------------------------------------------------------------------------------- |
-| Language       | Python 3.12+                                                                            |
-| Data Source    | [OpenF1 API](https://openf1.org)                                                        |
-| Database       | PostgreSQL 16 + pgvector                                                                |
-| LLM            | [OpenRouter](https://openrouter.ai) via [PydanticAI](https://ai.pydantic.dev)           |
-| Text-to-Speech | [ElevenLabs](https://elevenlabs.io) (English dialogue) |
-| Frontend       | [htmx](https://htmx.org) + [Alpine.js](https://alpinejs.dev) + Jinja2 templates         |
-| Visualisations | [Pyodide](https://pyodide.org) (Python in WebAssembly) for client-side charts           |
-| Secrets        | [dotenvx](https://dotenvx.com)                                                          |
-| Web Framework  | [FastAPI](https://fastapi.tiangolo.com) (REST API + WebSocket + htmx HTML fragments)    |
+| Component      | Technology                                                                           |
+| -------------- | ------------------------------------------------------------------------------------ |
+| Language       | Python 3.12+                                                                         |
+| Data Source    | [OpenF1 API](https://openf1.org)                                                     |
+| Database       | PostgreSQL 16 + pgvector                                                             |
+| LLM            | [OpenRouter](https://openrouter.ai) via [PydanticAI](https://ai.pydantic.dev)        |
+| Text-to-Speech | [ElevenLabs](https://elevenlabs.io) (English dialogue)                               |
+| Frontend       | [htmx](https://htmx.org) + [Alpine.js](https://alpinejs.dev) + Jinja2 templates      |
+| Visualisations | [Pyodide](https://pyodide.org) (Python in WebAssembly) for client-side charts        |
+| Secrets        | [dotenvx](https://dotenvx.com)                                                       |
+| Web Framework  | [FastAPI](https://fastapi.tiangolo.com) (REST API + WebSocket + htmx HTML fragments) |
 
 ## Project Structure
 
@@ -151,7 +151,7 @@ box-box-box/
 
 ### Engagement — what makes someone open this again next race
 
-- **Driver focus mode** — pick "your" driver and filter everything: summaries mentioning that driver, radio from that team only, gap chart relative to their position. Personalisation turns a tool into *your* tool.
+- **Driver focus mode** — pick "your" driver and filter everything: summaries mentioning that driver, radio from that team only, gap chart relative to their position. Personalisation turns a tool into _your_ tool.
 - **Post-race digest** — after the session ends, one final LLM call with all summaries as context generates a 2-3 paragraph race report. Stored, shareable — the thing someone sends to their WhatsApp group.
 
 ## Polling Strategy
@@ -201,7 +201,6 @@ curl -sfS https://dotenvx.sh/install.sh | sh
 # Set your secrets (encrypts automatically)
 dotenvx set OPENROUTER_API_KEY "sk-or-..."
 dotenvx set GROQ_API_KEY "gsk_..."
-dotenvx set DEEPGRAM_API_KEY "..."
 ```
 
 This creates:
@@ -211,17 +210,17 @@ This creates:
 
 ### Required variables
 
-| Variable                       | Description                                                       |
-| ------------------------------ | ----------------------------------------------------------------- |
-| `OPENROUTER_API_KEY`           | LLM API key via OpenRouter                                        |
-| `OPENF1_BASE_URL`              | OpenF1 API base (default: `https://api.openf1.org/v1`)            |
-| `POLL_INTERVAL_SECONDS`        | Polling frequency (default: `10`)                                 |
-| `SUMMARY_INTERVAL_SECONDS`     | Summary generation interval (default: `60`)                       |
-| `TTS_LANGUAGE`                 | TTS language (default: `en`)                                      |
-| `AUDIO_DIR`                    | Directory for generated audio files (default: `data/audio`)       |
-| `ELEVENLABS_API_KEY`           | ElevenLabs API key (English TTS)                                  |
-| `ELEVENLABS_LEAD_VOICE_ID`     | ElevenLabs voice ID for the Lead commentator                      |
-| `ELEVENLABS_ANALYST_VOICE_ID`  | ElevenLabs voice ID for the Analyst commentator                   |
+| Variable                      | Description                                                 |
+| ----------------------------- | ----------------------------------------------------------- |
+| `OPENROUTER_API_KEY`          | LLM API key via OpenRouter                                  |
+| `OPENF1_BASE_URL`             | OpenF1 API base (default: `https://api.openf1.org/v1`)      |
+| `POLL_INTERVAL_SECONDS`       | Polling frequency (default: `10`)                           |
+| `SUMMARY_INTERVAL_SECONDS`    | Summary generation interval (default: `60`)                 |
+| `TTS_LANGUAGE`                | TTS language (default: `en`)                                |
+| `AUDIO_DIR`                   | Directory for generated audio files (default: `data/audio`) |
+| `ELEVENLABS_API_KEY`          | ElevenLabs API key (English TTS)                            |
+| `ELEVENLABS_LEAD_VOICE_ID`    | ElevenLabs voice ID for the Lead commentator                |
+| `ELEVENLABS_ANALYST_VOICE_ID` | ElevenLabs voice ID for the Analyst commentator             |
 
 ## Development
 
