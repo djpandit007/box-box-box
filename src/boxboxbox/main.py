@@ -47,7 +47,7 @@ async def async_main() -> None:
 
     # Create summariser components
     summary_agent = create_summary_agent(settings.SUMMARISER_MODEL)
-    digest_agent = create_digest_agent(settings.SUMMARISER_MODEL)
+    digest_agent = create_digest_agent(settings.DIGEST_MODEL)
     embedding_client = EmbeddingClient(
         api_key=settings.OPENROUTER_API_KEY,
         model=settings.EMBEDDING_MODEL,
