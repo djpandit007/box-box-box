@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>box-box-box &mdash; Live Race</title>
+  <title>box-box-box &mdash; {% if is_live %}Live Race{% else %}Race Replay{% endif %}</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 1rem; }
     .layout { display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem; }
@@ -17,6 +17,12 @@
     .summary-card__audio { width: 100%; margin-top: .4rem; }
     #alerts { position: fixed; top: 1rem; right: 1rem; width: 280px; }
     .alert { background: #e10600; color: white; border-radius: 4px; padding: .6rem 1rem; margin-bottom: .5rem; }
+    .replay-bar { display: flex; align-items: center; gap: 1rem; padding: .75rem 0; margin-bottom: 1rem; border-bottom: 1px solid #ddd; }
+    .replay-bar input[type="range"] { flex: 1; }
+    .replay-bar button { padding: .4rem 1rem; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer; min-width: 5rem; }
+    .replay-bar button:hover { background: #f0f0f0; }
+    .replay-bar .time-label { font-family: monospace; font-size: .9rem; min-width: 5.5rem; }
+    .replay-loading { text-align: center; padding: 2rem; color: #888; }
   </style>
 </head>
 <body>
@@ -24,6 +30,39 @@
 
   <div id="alerts"></div>
 
+  {% if not is_live %}
+  {# Replay mode: Alpine.js controller wraps the entire layout #}
+  <div x-data="replayController()" x-init="init()">
+    <div class="replay-bar" x-show="loaded">
+      <button @click="togglePlay()" x-text="playing ? 'Pause' : 'Play'"></button>
+      <input type="range" min="0" :max="maxTick" x-model.number="currentTick" @input="onSliderInput()">
+      <span class="time-label" x-text="currentTimeLabel"></span>
+    </div>
+    <div class="replay-loading" x-show="!loaded">Loading replay data&hellip;</div>
+
+    <div class="layout" x-show="loaded">
+      <div>
+        <h2>Standings</h2>
+        {% include "partials/leaderboard.html" %}
+      </div>
+      <div>
+        <h2>Race Timeline</h2>
+        <div id="summary-timeline">
+          <template x-for="summary in visibleSummaries" :key="summary.window_end">
+            <article class="summary-card">
+              <div class="summary-card__time" x-text="summary.window_start.substring(11, 19) + ' \u2014 ' + summary.window_end.substring(11, 19)"></div>
+              <p x-text="summary.summary_text"></p>
+              <template x-if="summary.audio_url">
+                <audio class="summary-card__audio" controls :src="summary.audio_url"></audio>
+              </template>
+            </article>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  {# Live mode: static layout, updated via WebSocket #}
   <div class="layout">
     <div>
       <h2>Standings</h2>
@@ -34,6 +73,7 @@
       <div id="summary-timeline"></div>
     </div>
   </div>
+  {% endif %}
 
   <!-- htmx + WebSocket extension -->
   <script src="https://unpkg.com/htmx.org@2/dist/htmx.min.js"></script>
@@ -42,7 +82,8 @@
   <!-- Alpine.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
 
-  <!-- WebSocket connection -->
+  {% if is_live %}
+  <!-- WebSocket connection (live mode only) -->
   <script>
     const wsUrl = "ws://" + window.location.host + "/ws";
     const socket = new WebSocket(wsUrl);
@@ -64,6 +105,7 @@
       }
     });
   </script>
+  {% endif %}
 
   <!-- Pyodide -->
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js"></script>
@@ -77,6 +119,14 @@ BATTLE_THRESHOLD = 1.5
 STABLE_TOLERANCE = 0.1
 
 prev_snapshot = None
+
+def reset_state():
+    global prev_snapshot
+    from js import document
+    prev_snapshot = None
+    alerts = document.getElementById("alerts")
+    if alerts:
+        alerts.innerHTML = ""
 
 def update_leaderboard_row(driver_number, interval, delta, trend):
     from js import document
@@ -184,10 +234,154 @@ def process_snapshot(snapshot):
         pyodide.globals.set("_snapshot", msg);
         pyodide.runPython("process_snapshot(_snapshot.to_py())");
       };
+      window._resetState = function() {
+        pyodide.runPython("reset_state()");
+      };
       window._pyodideReady = true;
     }
 
     initPyodide().catch(console.error);
   </script>
+
+  {% if not is_live %}
+  <!-- Replay controller (replay mode only) -->
+  <script>
+    function replayController() {
+      return {
+        loaded: false,
+        replayData: null,
+        allSummaries: [],
+        ticks: [],
+        currentTick: 0,
+        maxTick: 0,
+        playing: false,
+        playInterval: null,
+        prevTick: -1,
+        debounceTimer: null,
+
+        async init() {
+          const resp = await fetch("/api/sessions/{{ session_key }}/replay");
+          this.replayData = await resp.json();
+          this.allSummaries = this.replayData.summaries;
+          this.buildTicks();
+          this.loaded = true;
+          // Wait for Pyodide to be ready, then show initial state
+          await this.waitForPyodide();
+          this.applySnapshot();
+        },
+
+        waitForPyodide() {
+          return new Promise(resolve => {
+            const check = () => window._pyodideReady ? resolve() : setTimeout(check, 100);
+            check();
+          });
+        },
+
+        buildTicks() {
+          const tsSet = new Set();
+          const events = this.replayData.events;
+          for (const source of ["position", "intervals", "weather"]) {
+            for (const evt of events[source]) {
+              // Quantize to 10-second boundaries
+              const d = new Date(evt.event_date);
+              d.setMilliseconds(0);
+              d.setSeconds(Math.floor(d.getSeconds() / 10) * 10);
+              tsSet.add(d.toISOString());
+            }
+          }
+          this.ticks = Array.from(tsSet).sort();
+          this.maxTick = Math.max(this.ticks.length - 1, 0);
+        },
+
+        onSliderInput() {
+          clearTimeout(this.debounceTimer);
+          this.debounceTimer = setTimeout(() => this.applySnapshot(), 50);
+        },
+
+        applySnapshot() {
+          if (!this.ticks.length || !window._pyodideReady) return;
+
+          const ts = this.ticks[this.currentTick];
+
+          // Reset Pyodide state when scrubbing backward
+          if (this.currentTick < this.prevTick) {
+            window._resetState();
+          }
+          this.prevTick = this.currentTick;
+
+          const snapshot = this.buildSnapshotAtTime(ts);
+          window._processSnapshot(snapshot);
+        },
+
+        buildSnapshotAtTime(timestamp) {
+          const events = this.replayData.events;
+
+          // Latest position per driver at or before timestamp
+          const positions = [];
+          const posSeen = new Set();
+          for (let i = events.position.length - 1; i >= 0; i--) {
+            const evt = events.position[i];
+            if (evt.event_date <= timestamp && !posSeen.has(evt.driver_number)) {
+              posSeen.add(evt.driver_number);
+              positions.push({ driver_number: evt.driver_number, position: evt.position });
+            }
+          }
+
+          // Latest interval per driver at or before timestamp
+          const intervals = [];
+          const intSeen = new Set();
+          for (let i = events.intervals.length - 1; i >= 0; i--) {
+            const evt = events.intervals[i];
+            if (evt.event_date <= timestamp && !intSeen.has(evt.driver_number)) {
+              intSeen.add(evt.driver_number);
+              intervals.push({ driver_number: evt.driver_number, interval: evt.interval });
+            }
+          }
+
+          // Latest weather at or before timestamp
+          let weather = { rainfall: 0, air_temp: 0, track_temp: 0 };
+          for (let i = events.weather.length - 1; i >= 0; i--) {
+            const evt = events.weather[i];
+            if (evt.event_date <= timestamp) {
+              weather = { rainfall: evt.rainfall, air_temp: evt.air_temp, track_temp: evt.track_temp };
+              break;
+            }
+          }
+
+          return { positions, intervals, weather };
+        },
+
+        togglePlay() {
+          if (this.playing) {
+            clearInterval(this.playInterval);
+            this.playInterval = null;
+          } else {
+            this.playInterval = setInterval(() => {
+              if (this.currentTick < this.maxTick) {
+                this.currentTick++;
+                this.applySnapshot();
+              } else {
+                this.togglePlay();
+              }
+            }, 200);
+          }
+          this.playing = !this.playing;
+        },
+
+        get currentTimeLabel() {
+          if (!this.ticks.length) return "--:--:--";
+          const ts = this.ticks[this.currentTick];
+          return ts ? ts.substring(11, 19) : "--:--:--";
+        },
+
+        get visibleSummaries() {
+          if (!this.ticks.length) return [];
+          const ts = this.ticks[this.currentTick];
+          return this.allSummaries.filter(s => s.window_end <= ts);
+        }
+      };
+    }
+  </script>
+  {% endif %}
 </body>
 </html>

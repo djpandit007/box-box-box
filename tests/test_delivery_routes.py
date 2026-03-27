@@ -194,3 +194,76 @@ class TestStandingsRouter:
         assert data[1]["position"] == 2
         assert data[1]["interval"] == 0.8
         assert data[1]["name_acronym"] == "HAM"
+
+
+class TestReplayRouter:
+    @pytest.mark.asyncio
+    async def test_replay_returns_grouped_events_and_summaries(self):
+        # Mock session query
+        session_obj = _make_session_obj()
+        session_result = MagicMock()
+        session_result.scalar_one_or_none.return_value = session_obj
+
+        # Mock events query — two position events and one weather event
+        events_result = MagicMock()
+        events_result.all.return_value = [
+            ("position", 1, datetime(2026, 9, 7, 13, 0, 10), {"position": 1}),
+            ("intervals", 33, datetime(2026, 9, 7, 13, 0, 10), {"interval": 0.8}),
+            (
+                "weather",
+                None,
+                datetime(2026, 9, 7, 13, 0, 10),
+                {"rainfall": 0, "air_temperature": 22, "track_temperature": 40},
+            ),
+        ]
+
+        # Mock summaries query
+        summary_obj = _make_summary_obj()
+        summaries_result = MagicMock()
+        summaries_result.scalars.return_value.all.return_value = [summary_obj]
+
+        app, _ = _make_app([session_result, events_result, summaries_result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/1234/replay")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_start"] == "2026-09-07T13:00:00"
+        assert data["session_end"] == "2026-09-07T15:00:00"
+        assert len(data["events"]["position"]) == 1
+        assert data["events"]["position"][0]["driver_number"] == 1
+        assert data["events"]["position"][0]["position"] == 1
+        assert len(data["events"]["intervals"]) == 1
+        assert data["events"]["intervals"][0]["interval"] == 0.8
+        assert len(data["events"]["weather"]) == 1
+        assert data["events"]["weather"][0]["rainfall"] == 0
+        assert data["events"]["weather"][0]["air_temp"] == 22
+        assert len(data["summaries"]) == 1
+        assert data["summaries"][0]["summary_text"] == "Hamilton leads."
+
+    @pytest.mark.asyncio
+    async def test_replay_empty_session(self):
+        # Mock session query — no session found
+        session_result = MagicMock()
+        session_result.scalar_one_or_none.return_value = None
+
+        # Mock empty events
+        events_result = MagicMock()
+        events_result.all.return_value = []
+
+        # Mock empty summaries
+        summaries_result = MagicMock()
+        summaries_result.scalars.return_value.all.return_value = []
+
+        app, _ = _make_app([session_result, events_result, summaries_result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/9999/replay")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_start"] is None
+        assert data["session_end"] is None
+        assert data["events"]["position"] == []
+        assert data["events"]["intervals"] == []
+        assert data["events"]["weather"] == []
+        assert data["summaries"] == []

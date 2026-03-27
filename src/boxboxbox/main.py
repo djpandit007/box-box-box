@@ -126,14 +126,17 @@ async def async_main() -> None:
     )
 
     # Always start the delivery server — available for both live and finished sessions.
+    is_live = not _session_is_finished(poller.session_info.date_end)
     manager = ConnectionManager()
-    app = create_app(session_factory, embedding_client, manager, poller.session_key)
+    app = create_app(session_factory, embedding_client, manager, poller.session_key, is_live=is_live)
     web_config = uvicorn.Config(app, host=WEB_HOST, port=WEB_PORT, log_level="warning")
     web_task = asyncio.create_task(uvicorn.Server(web_config).serve())
-    snapshot_task = asyncio.create_task(_push_snapshots(session_factory, manager, poller.session_key))
+    snapshot_task = (
+        asyncio.create_task(_push_snapshots(session_factory, manager, poller.session_key)) if is_live else None
+    )
 
     try:
-        if _session_is_finished(poller.session_info.date_end):
+        if not is_live:
             # Session already finished — show existing digest or generate from historical data
             logger.info(
                 "Session %s (%s) is finished — checking for existing digest",
@@ -206,9 +209,12 @@ async def async_main() -> None:
                 except asyncio.CancelledError:
                     pass
     finally:
-        snapshot_task.cancel()
+        if snapshot_task is not None:
+            snapshot_task.cancel()
         web_task.cancel()
         for task in (snapshot_task, web_task):
+            if task is None:
+                continue
             try:
                 await task
             except asyncio.CancelledError:

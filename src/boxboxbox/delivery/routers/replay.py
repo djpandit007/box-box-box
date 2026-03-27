@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Request
+from sqlalchemy import select
+
+from boxboxbox.models import RaceEvent, Session, Summary, SummaryType
+
+router = APIRouter()
+
+
+@router.get("/api/sessions/{session_key}/replay")
+async def get_replay_data(session_key: int, request: Request) -> dict:
+    async with request.app.state.session_factory() as db:
+        # Session metadata
+        session_result = await db.execute(select(Session).where(Session.session_key == session_key))
+        session = session_result.scalar_one_or_none()
+        session_start = session.date_start.isoformat() if session else None
+        session_end = session.date_end.isoformat() if session and session.date_end else None
+
+        # All position, interval, and weather events for the session
+        events_result = await db.execute(
+            select(RaceEvent.source, RaceEvent.driver_number, RaceEvent.event_date, RaceEvent.data)
+            .where(
+                RaceEvent.session_key == session_key,
+                RaceEvent.source.in_(["position", "intervals", "weather"]),
+            )
+            .order_by(RaceEvent.event_date)
+        )
+        rows = events_result.all()
+
+        position_events = []
+        interval_events = []
+        weather_events = []
+
+        for source, driver_number, event_date, data in rows:
+            ts = event_date.isoformat()
+            if source == "position":
+                position_events.append(
+                    {
+                        "driver_number": driver_number,
+                        "event_date": ts,
+                        "position": data.get("position"),
+                    }
+                )
+            elif source == "intervals":
+                interval_events.append(
+                    {
+                        "driver_number": driver_number,
+                        "event_date": ts,
+                        "interval": data.get("interval"),
+                    }
+                )
+            elif source == "weather":
+                weather_events.append(
+                    {
+                        "event_date": ts,
+                        "rainfall": data.get("rainfall", 0),
+                        "air_temp": data.get("air_temperature", 0),
+                        "track_temp": data.get("track_temperature", 0),
+                    }
+                )
+
+        # All window summaries
+        summaries_result = await db.execute(
+            select(Summary)
+            .where(
+                Summary.session_key == session_key,
+                Summary.summary_type == SummaryType.window,
+            )
+            .order_by(Summary.window_end)
+        )
+        summaries = [
+            {
+                "window_start": s.window_start.isoformat(),
+                "window_end": s.window_end.isoformat(),
+                "summary_text": s.summary_text,
+                "audio_url": s.audio_url,
+            }
+            for s in summaries_result.scalars().all()
+        ]
+
+    return {
+        "session_start": session_start,
+        "session_end": session_end,
+        "events": {
+            "position": position_events,
+            "intervals": interval_events,
+            "weather": weather_events,
+        },
+        "summaries": summaries,
+    }
