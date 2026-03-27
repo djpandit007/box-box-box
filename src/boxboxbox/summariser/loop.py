@@ -24,6 +24,7 @@ class SummarisationLoop:
         agent: Agent,
         embedding_client: EmbeddingClient,
         session_key: int,
+        session_type: str = "Race",
         interval_seconds: int = 60,
         grace_seconds: int = 300,
     ):
@@ -31,6 +32,7 @@ class SummarisationLoop:
         self._agent = agent
         self._embedding_client = embedding_client
         self._session_key = session_key
+        self._session_type = session_type
         self._interval = interval_seconds
         self._grace_seconds = grace_seconds
         self._last_window_end: datetime | None = None
@@ -68,7 +70,9 @@ class SummarisationLoop:
         async with self._session_factory() as db:
             previous_summary = await self._get_previous_summary(db)
 
-            prompt = await build_prompt(db, self._session_key, window_start, window_end, previous_summary)
+            prompt = await build_prompt(
+                db, self._session_key, window_start, window_end, previous_summary, self._session_type
+            )
 
             if prompt is None:
                 if self._no_events_since is None:
@@ -144,6 +148,7 @@ async def generate_historical_summaries(
     agent: Agent,
     embedding_client: EmbeddingClient,
     session_key: int,
+    session_type: str = "Race",
     interval_seconds: int = 60,
 ) -> None:
     """Generate all summaries for a finished session in batch."""
@@ -238,7 +243,7 @@ async def generate_historical_summaries(
         )
 
         async with session_factory() as db:
-            prompt = await build_prompt(db, session_key, window_start, window_end, previous_summary)
+            prompt = await build_prompt(db, session_key, window_start, window_end, previous_summary, session_type)
 
             if prompt is not None:
                 try:

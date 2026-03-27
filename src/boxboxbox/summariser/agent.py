@@ -41,6 +41,16 @@ summary of what happened in this 60-second window of the race.
   "Leading: VER | NOR | LEC"
 - Use exactly this format: "Leading: P1_ACR | P2_ACR | P3_ACR"
 - If position data is unavailable for the window, omit the sign-off line
+
+## Session context
+The session_type attribute on <race_window> tells you what kind of session this is. Adjust accordingly:
+
+- **Race** (Sprint / Race): default behavior — cover overtakes, pit strategy, incidents, positions; include the "Leading:" sign-off
+- **Practice** (Practice 1 / Practice 2 / Practice 3): focus on lap times and fastest laps; positions
+  and overtakes carry no competitive meaning; pit stop timings are irrelevant (cars sit in the pit
+  lane for extended periods during practice). Omit the "Leading:" sign-off.
+- **Qualifying** (Q1 / Q2 / Q3 / Shootout): focus on fastest lap times, sector improvements, and
+  yellow/red flags that disrupt runs; omit the "Leading:" sign-off.
 """
 
 DIGEST_SYSTEM_PROMPT = """\
@@ -74,6 +84,18 @@ Analyst: [analytical] The key moment came at lap 32 — Red Bull's undercut caug
 completely off guard.
 Lead: [excited] And what a recovery from Lewis Hamilton, climbing from ninth on the grid to \
 claim a stunning second place.
+
+## Session context
+The session_type and optional final_standings in the prompt tell you what kind of session this is.
+
+- **Race**: default — cover the race story, pit strategy, winner. When final_standings are provided,
+  the second-to-last line must be Analyst [analytical] reading the final classification in order.
+  The final line must be Lead [dramatic] or [reflective] naming the winner.
+- **Practice**: focus on lap-time improvements and who set the benchmark lap. Drop the winner
+  sign-off; replace the second-to-last and final lines with reflections on tyre performance and
+  what the times suggest for race pace.
+- **Qualifying**: focus on who took pole, key elimination moments, and grid order. Replace the
+  final classification with the grid order; end with naming the pole-sitter.
 """
 
 

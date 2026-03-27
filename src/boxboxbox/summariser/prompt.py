@@ -20,6 +20,7 @@ async def build_prompt(
     window_start: datetime,
     window_end: datetime,
     previous_summary: str | None,
+    session_type: str = "Race",
 ) -> str | None:
     """Build an XML-tagged prompt from race events in [window_start, window_end).
 
@@ -31,7 +32,9 @@ async def build_prompt(
         return None
 
     driver_map = await _fetch_driver_map(db, session_key)
-    context = _build_template_context(events_by_source, driver_map, previous_summary, window_start, window_end)
+    context = _build_template_context(
+        events_by_source, driver_map, previous_summary, window_start, window_end, session_type
+    )
     template = _jinja_env.get_template("summary_prompt.xml.jinja2")
     return template.render(context)
 
@@ -96,12 +99,14 @@ def _build_template_context(
     previous_summary: str | None,
     window_start: datetime,
     window_end: datetime,
+    session_type: str = "Race",
 ) -> dict:
     """Transform raw DB events into clean template context dicts."""
     ctx: dict = {
         "window_start": window_start.strftime("%H:%M:%S"),
         "window_end": window_end.strftime("%H:%M:%S"),
         "previous_summary": previous_summary,
+        "session_type": session_type,
     }
 
     # Race control

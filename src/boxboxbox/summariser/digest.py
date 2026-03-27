@@ -6,12 +6,12 @@ from collections.abc import Sequence
 
 from jinja2 import Environment, FileSystemLoader
 from pydantic_ai import Agent
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from boxboxbox.audio.tts import generate_audio
 from boxboxbox.config import settings
 from boxboxbox.db import SessionFactory
-from boxboxbox.models import Session, Summary, SummaryType
+from boxboxbox.models import RaceEvent, Session, Summary, SummaryType
 from boxboxbox.summariser.embeddings import EmbeddingClient
 
 logger = logging.getLogger(__name__)
@@ -66,14 +66,22 @@ async def generate_digest(
         session_result = await db.execute(select(Session).where(Session.session_key == session_key))
         session = session_result.scalar_one_or_none()
 
-        digest_prompt = _build_digest_prompt(summaries, session)
+        # Fetch final standings from session_result endpoint data (race only)
+        standings_result = await db.execute(
+            select(RaceEvent)
+            .where(RaceEvent.session_key == session_key, RaceEvent.source == "session_result")
+            .order_by(text("(data->>'position')::int"))
+        )
+        final_standings = [row.data for row in standings_result.scalars().all()]
+
+        digest_prompt = _build_digest_prompt(summaries, session, final_standings)
 
         logger.info("#" * 60)
         logger.info("POST-RACE DIGEST")
         logger.info("#" * 60)
         async with digest_agent.run_stream(user_prompt=digest_prompt) as agent_result:
-            async for text in agent_result.stream_text(delta=True):
-                print(text, end="", flush=True)
+            async for chunk in agent_result.stream_text(delta=True):
+                print(chunk, end="", flush=True)
             digest_text = await agent_result.get_output()
         print()  # newline after streamed tokens
         logger.info("#" * 60)
@@ -103,12 +111,18 @@ async def generate_digest(
         return digest_text
 
 
-def _build_digest_prompt(summaries: Sequence[Summary], session: Session | None) -> str:
+def _build_digest_prompt(
+    summaries: Sequence[Summary],
+    session: Session | None,
+    final_standings: list[dict] | None = None,
+) -> str:
     """Render the digest prompt template with all race summaries."""
     template = _jinja_env.get_template("digest_prompt.xml.jinja2")
     return template.render(
         session_name=session.session_name if session else "Unknown",
         circuit=session.circuit_short_name if session else "Unknown",
+        session_type=session.session_type if session else "Race",
+        final_standings=final_standings or [],
         summaries=[
             {
                 "window_start": s.window_start.strftime("%H:%M:%S"),

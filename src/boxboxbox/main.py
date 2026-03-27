@@ -90,6 +90,7 @@ async def async_main() -> None:
                     agent=summary_agent,
                     embedding_client=embedding_client,
                     session_key=poller.session_key,
+                    session_type=poller.session_info.session_type,
                     interval_seconds=settings.SUMMARY_INTERVAL_SECONDS,
                 )
 
@@ -102,6 +103,7 @@ async def async_main() -> None:
                 agent=summary_agent,
                 embedding_client=embedding_client,
                 session_key=poller.session_key,
+                session_type=poller.session_info.session_type,
                 interval_seconds=settings.SUMMARY_INTERVAL_SECONDS,
                 grace_seconds=settings.SESSION_END_GRACE_SECONDS,
             )
