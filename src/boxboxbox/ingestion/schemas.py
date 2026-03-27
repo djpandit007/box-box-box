@@ -164,8 +164,8 @@ class PitResponse(BaseModel):
     lap_number: int
     driver_number: int
     stop_duration: float | None = None
-    lane_duration: float
-    pit_duration: float
+    lane_duration: float | None = None
+    pit_duration: float | None = None
     meeting_key: int
 
     @field_validator("date")
@@ -228,6 +228,22 @@ class TeamRadioResponse(BaseModel):
         return v
 
 
+class SessionResultResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    session_key: int
+    meeting_key: int
+    driver_number: int
+    position: int | None = None
+    number_of_laps: int | None = None
+    points: int | None = None
+    dnf: bool = False
+    dns: bool = False
+    dsq: bool = False
+    duration: float | None = None
+    gap_to_leader: float | str | None = None
+
+
 ENDPOINT_MODELS: dict[str, type[BaseModel]] = {
     "sessions": SessionResponse,
     "drivers": DriverResponse,
@@ -240,4 +256,5 @@ ENDPOINT_MODELS: dict[str, type[BaseModel]] = {
     "stints": StintResponse,
     "weather": WeatherResponse,
     "team_radio": TeamRadioResponse,
+    "session_result": SessionResultResponse,
 }

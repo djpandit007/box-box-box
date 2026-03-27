@@ -6,12 +6,12 @@ from collections.abc import Sequence
 
 from jinja2 import Environment, FileSystemLoader
 from pydantic_ai import Agent
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from boxboxbox.audio.tts import generate_audio
 from boxboxbox.config import settings
 from boxboxbox.db import SessionFactory
-from boxboxbox.models import Session, Summary, SummaryType
+from boxboxbox.models import Driver, RaceEvent, Session, Summary, SummaryType
 from boxboxbox.summariser.embeddings import EmbeddingClient
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ async def generate_digest(
     digest_agent: Agent,
     embedding_client: EmbeddingClient,
     session_key: int,
+    session_type: str = "Race",
 ) -> str:
     """Generate a post-race digest from all summaries and store it."""
     async with session_factory() as db:
@@ -45,7 +46,7 @@ async def generate_digest(
             # Digest text exists but audio is missing — generate audio only.
             logger.info("Digest text exists but audio is missing, generating audio only.")
             if settings.ELEVENLABS_API_KEY:
-                audio_url = await generate_audio(existing_digest.summary_text, session_key)
+                audio_url = await generate_audio(existing_digest.summary_text, session_key, session_type)
                 if audio_url:
                     existing_digest.audio_url = audio_url
                     await db.commit()
@@ -66,14 +67,40 @@ async def generate_digest(
         session_result = await db.execute(select(Session).where(Session.session_key == session_key))
         session = session_result.scalar_one_or_none()
 
-        digest_prompt = _build_digest_prompt(summaries, session)
+        # Fetch final standings from session_result endpoint data (present for race and qualifying)
+        standings_result = await db.execute(
+            select(RaceEvent)
+            .where(RaceEvent.session_key == session_key, RaceEvent.source == "session_result")
+            .order_by(text("(data->>'position')::int NULLS LAST"))
+        )
+        driver_rows = await db.execute(select(Driver).where(Driver.session_key == session_key))
+        driver_map = {d.driver_number: d for d in driver_rows.scalars().all()}
+
+        final_standings = []
+        for row in standings_result.scalars().all():
+            d = row.data
+            driver_number = d.get("driver_number")
+            driver = driver_map.get(driver_number) if driver_number is not None else None
+            name = f"{driver.full_name} ({driver.name_acronym})" if driver else f"#{driver_number}"
+            final_standings.append(
+                {
+                    "position": d.get("position"),
+                    "driver": name,
+                    "gap_to_leader": d.get("gap_to_leader"),
+                    "dnf": d.get("dnf", False),
+                    "dns": d.get("dns", False),
+                    "dsq": d.get("dsq", False),
+                }
+            )
+
+        digest_prompt = _build_digest_prompt(summaries, session, final_standings)
 
         logger.info("#" * 60)
         logger.info("POST-RACE DIGEST")
         logger.info("#" * 60)
         async with digest_agent.run_stream(user_prompt=digest_prompt) as agent_result:
-            async for text in agent_result.stream_text(delta=True):
-                print(text, end="", flush=True)
+            async for chunk in agent_result.stream_text(delta=True):
+                print(chunk, end="", flush=True)
             digest_text = await agent_result.get_output()
         print()  # newline after streamed tokens
         logger.info("#" * 60)
@@ -95,7 +122,7 @@ async def generate_digest(
         await db.commit()
 
         if settings.ELEVENLABS_API_KEY:
-            audio_url = await generate_audio(digest_text, session_key)
+            audio_url = await generate_audio(digest_text, session_key, session_type)
             if audio_url:
                 digest.audio_url = audio_url
                 await db.commit()
@@ -103,12 +130,18 @@ async def generate_digest(
         return digest_text
 
 
-def _build_digest_prompt(summaries: Sequence[Summary], session: Session | None) -> str:
+def _build_digest_prompt(
+    summaries: Sequence[Summary],
+    session: Session | None,
+    final_standings: list[dict] | None = None,
+) -> str:
     """Render the digest prompt template with all race summaries."""
     template = _jinja_env.get_template("digest_prompt.xml.jinja2")
     return template.render(
         session_name=session.session_name if session else "Unknown",
         circuit=session.circuit_short_name if session else "Unknown",
+        session_type=session.session_type if session else "Race",
+        final_standings=final_standings or [],
         summaries=[
             {
                 "window_start": s.window_start.strftime("%H:%M:%S"),
