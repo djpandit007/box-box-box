@@ -5,6 +5,7 @@ import pathlib
 from fastapi import APIRouter, Request
 from sqlalchemy import select
 
+from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.models import Driver, RaceEvent, Session, Summary, SummaryType
 
 router = APIRouter()
@@ -26,12 +27,15 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
         session_start = session.date_start.isoformat() if session else None
         session_end = session.date_end.isoformat() if session and session.date_end else None
 
-        # All position, interval, and weather events for the session
+        # Event sources depend on session type
+        non_race = is_non_race_session(session.session_type) if session else False
+        sources = ["weather", "laps"] if non_race else ["position", "intervals", "weather", "laps"]
+
         events_result = await db.execute(
             select(RaceEvent.source, RaceEvent.driver_number, RaceEvent.event_date, RaceEvent.data)
             .where(
                 RaceEvent.session_key == session_key,
-                RaceEvent.source.in_(["position", "intervals", "weather", "laps"]),
+                RaceEvent.source.in_(sources),
             )
             .order_by(RaceEvent.event_date)
         )

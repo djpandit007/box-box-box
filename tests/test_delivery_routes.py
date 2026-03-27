@@ -157,12 +157,10 @@ class TestSummariesRouter:
 class TestStandingsRouter:
     @pytest.mark.asyncio
     async def test_standings_returns_merged_data(self):
-        # Mock three DB calls: positions, intervals, drivers
-        pos_result = MagicMock()
-        pos_result.all.return_value = [(1, {"position": 1}), (33, {"position": 2})]
-
-        int_result = MagicMock()
-        int_result.all.return_value = [(33, {"interval": 0.8})]
+        # Mock DB calls: session, drivers, positions, intervals
+        session_obj = _make_session_obj()
+        session_result = MagicMock()
+        session_result.scalar_one_or_none.return_value = session_obj
 
         driver1 = MagicMock()
         driver1.driver_number = 1
@@ -181,7 +179,13 @@ class TestStandingsRouter:
         drivers_result = MagicMock()
         drivers_result.scalars.return_value.all.return_value = [driver1, driver33]
 
-        app, _ = _make_app([pos_result, int_result, drivers_result])
+        pos_result = MagicMock()
+        pos_result.all.return_value = [(1, {"position": 1}), (33, {"position": 2})]
+
+        int_result = MagicMock()
+        int_result.all.return_value = [(33, {"interval": 0.8})]
+
+        app, _ = _make_app([session_result, drivers_result, pos_result, int_result])
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/sessions/1234/standings")
 
@@ -194,6 +198,53 @@ class TestStandingsRouter:
         assert data[1]["position"] == 2
         assert data[1]["interval"] == 0.8
         assert data[1]["name_acronym"] == "HAM"
+
+    @pytest.mark.asyncio
+    async def test_standings_practice_uses_best_laps(self):
+        session_obj = _make_session_obj()
+        session_obj.session_type = "Practice 1"
+        session_result = MagicMock()
+        session_result.scalar_one_or_none.return_value = session_obj
+
+        driver1 = MagicMock()
+        driver1.driver_number = 1
+        driver1.name_acronym = "VER"
+        driver1.full_name = "Max Verstappen"
+        driver1.team_name = "Red Bull"
+        driver1.team_colour = "3671C6"
+
+        driver33 = MagicMock()
+        driver33.driver_number = 33
+        driver33.name_acronym = "HAM"
+        driver33.full_name = "Lewis Hamilton"
+        driver33.team_name = "Mercedes"
+        driver33.team_colour = "27F4D2"
+
+        drivers_result = MagicMock()
+        drivers_result.scalars.return_value.all.return_value = [driver1, driver33]
+
+        # Laps: driver 33 has faster best lap than driver 1
+        laps_result = MagicMock()
+        laps_result.all.return_value = [
+            (33, {"lap_duration": 80.1, "lap_number": 3}),
+            (1, {"lap_duration": 80.5, "lap_number": 2}),
+            (1, {"lap_duration": None, "lap_number": 1}),  # out-lap, should be ignored
+        ]
+
+        app, _ = _make_app([session_result, drivers_result, laps_result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/1234/standings")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["position"] == 1
+        assert data[0]["name_acronym"] == "HAM"
+        assert data[0]["best_lap"] == 80.1
+        assert data[0]["gap"] == 0.0
+        assert data[1]["position"] == 2
+        assert data[1]["name_acronym"] == "VER"
+        assert data[1]["best_lap"] == 80.5
 
 
 class TestReplayRouter:

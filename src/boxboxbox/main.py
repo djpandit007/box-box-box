@@ -6,6 +6,7 @@ import uvicorn
 from sqlalchemy import func, select
 
 from boxboxbox.config import settings
+from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.db import get_engine, get_session_factory
 from boxboxbox.delivery.app import WEB_HOST, WEB_PORT, create_app
 from boxboxbox.delivery.ws import SNAPSHOT_INTERVAL_SECONDS, ConnectionManager
@@ -39,46 +40,72 @@ def _session_is_finished(date_end: datetime) -> bool:
     return date_end < now_utc_naive
 
 
-async def _push_snapshots(session_factory, manager: ConnectionManager, session_key: int) -> None:
+async def _push_snapshots(session_factory, manager: ConnectionManager, session_key: int, session_type: str) -> None:
     """Periodically push position/interval/weather snapshots to all WebSocket clients."""
+    non_race = is_non_race_session(session_type)
     while True:
         try:
             async with session_factory() as db:
-                # Latest position per driver
-                pos_subq = (
-                    select(RaceEvent.driver_number, func.max(RaceEvent.event_date).label("max_date"))
-                    .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
-                    .group_by(RaceEvent.driver_number)
-                    .subquery()
-                )
-                pos_result = await db.execute(
-                    select(RaceEvent.driver_number, RaceEvent.data)
-                    .join(
-                        pos_subq,
-                        (RaceEvent.driver_number == pos_subq.c.driver_number)
-                        & (RaceEvent.event_date == pos_subq.c.max_date),
+                if non_race:
+                    # Practice/qualifying: derive standings from best lap times
+                    laps_result = await db.execute(
+                        select(RaceEvent.driver_number, RaceEvent.data).where(
+                            RaceEvent.session_key == session_key, RaceEvent.source == "laps"
+                        )
                     )
-                    .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
-                )
-                positions = [{"driver_number": row[0], "position": row[1].get("position")} for row in pos_result.all()]
+                    best_laps: dict[int, dict] = {}
+                    for driver_number, data in laps_result.all():
+                        dur = data.get("lap_duration")
+                        if dur is None:
+                            continue
+                        existing = best_laps.get(driver_number)
+                        if existing is None or dur < existing["lap_duration"]:
+                            best_laps[driver_number] = {
+                                "lap_duration": dur,
+                                "lap_number": data.get("lap_number"),
+                            }
+                    sorted_drivers = sorted(best_laps, key=lambda d: best_laps[d]["lap_duration"])
+                    positions = [{"driver_number": d, "position": idx + 1} for idx, d in enumerate(sorted_drivers)]
+                    intervals: list[dict] = []
+                else:
+                    # Race: use position and interval events directly
+                    pos_subq = (
+                        select(RaceEvent.driver_number, func.max(RaceEvent.event_date).label("max_date"))
+                        .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
+                        .group_by(RaceEvent.driver_number)
+                        .subquery()
+                    )
+                    pos_result = await db.execute(
+                        select(RaceEvent.driver_number, RaceEvent.data)
+                        .join(
+                            pos_subq,
+                            (RaceEvent.driver_number == pos_subq.c.driver_number)
+                            & (RaceEvent.event_date == pos_subq.c.max_date),
+                        )
+                        .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
+                    )
+                    positions = [
+                        {"driver_number": row[0], "position": row[1].get("position")} for row in pos_result.all()
+                    ]
 
-                # Latest interval per driver
-                int_subq = (
-                    select(RaceEvent.driver_number, func.max(RaceEvent.event_date).label("max_date"))
-                    .where(RaceEvent.session_key == session_key, RaceEvent.source == "intervals")
-                    .group_by(RaceEvent.driver_number)
-                    .subquery()
-                )
-                int_result = await db.execute(
-                    select(RaceEvent.driver_number, RaceEvent.data)
-                    .join(
-                        int_subq,
-                        (RaceEvent.driver_number == int_subq.c.driver_number)
-                        & (RaceEvent.event_date == int_subq.c.max_date),
+                    int_subq = (
+                        select(RaceEvent.driver_number, func.max(RaceEvent.event_date).label("max_date"))
+                        .where(RaceEvent.session_key == session_key, RaceEvent.source == "intervals")
+                        .group_by(RaceEvent.driver_number)
+                        .subquery()
                     )
-                    .where(RaceEvent.session_key == session_key, RaceEvent.source == "intervals")
-                )
-                intervals = [{"driver_number": row[0], "interval": row[1].get("interval")} for row in int_result.all()]
+                    int_result = await db.execute(
+                        select(RaceEvent.driver_number, RaceEvent.data)
+                        .join(
+                            int_subq,
+                            (RaceEvent.driver_number == int_subq.c.driver_number)
+                            & (RaceEvent.event_date == int_subq.c.max_date),
+                        )
+                        .where(RaceEvent.session_key == session_key, RaceEvent.source == "intervals")
+                    )
+                    intervals = [
+                        {"driver_number": row[0], "interval": row[1].get("interval")} for row in int_result.all()
+                    ]
 
                 # Latest weather reading
                 weather_result = await db.execute(
@@ -99,7 +126,10 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
                 )
 
             if positions:
-                await manager.broadcast_json({"positions": positions, "intervals": intervals, "weather": weather})
+                payload: dict = {"positions": positions, "intervals": intervals, "weather": weather}
+                if non_race:
+                    payload["best_laps"] = {str(k): v for k, v in best_laps.items()}
+                await manager.broadcast_json(payload)
         except asyncio.CancelledError:
             return
         except Exception:
@@ -142,7 +172,11 @@ async def async_main() -> None:
     web_config = uvicorn.Config(app, host=WEB_HOST, port=WEB_PORT, log_level="warning")
     web_task = asyncio.create_task(uvicorn.Server(web_config).serve())
     snapshot_task = (
-        asyncio.create_task(_push_snapshots(session_factory, manager, poller.session_key)) if is_live else None
+        asyncio.create_task(
+            _push_snapshots(session_factory, manager, poller.session_key, poller.session_info.session_type)
+        )
+        if is_live
+        else None
     )
 
     try:

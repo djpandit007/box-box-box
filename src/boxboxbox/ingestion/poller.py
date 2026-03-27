@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from boxboxbox.ingestion.client import OpenF1Client
-from boxboxbox.ingestion.endpoints import ENDPOINTS, EndpointConfig, Priority
+from boxboxbox.ingestion.endpoints import ENDPOINTS, EndpointConfig, Priority, is_non_race_session
 from boxboxbox.ingestion.schemas import ENDPOINT_MODELS, DriverResponse, SessionResponse
 from boxboxbox.models import Driver, RaceEvent, RadioTranscript, Session
 
@@ -94,9 +94,16 @@ class Poller:
 
     async def poll_once(self) -> None:
         self._tick += 1
-        endpoints = [ep for ep in ENDPOINTS if self._should_poll(ep)]
+        endpoints = [ep for ep in ENDPOINTS if self._should_poll(ep) and self._should_include(ep)]
         logger.info("Tick %d: polling %d endpoints", self._tick, len(endpoints))
         await asyncio.gather(*(self._fetch_and_store(ep) for ep in endpoints))
+
+    def _should_include(self, endpoint: EndpointConfig) -> bool:
+        """Filter out endpoints that don't apply to the current session type."""
+        if is_non_race_session(self.session_info.session_type):
+            if endpoint.name in ("position", "intervals"):
+                return False
+        return True
 
     def _should_poll(self, endpoint: EndpointConfig) -> bool:
         if endpoint.priority == Priority.P1:
@@ -229,7 +236,8 @@ class Poller:
     async def ingest_all(self) -> None:
         """One-shot fetch of all endpoints for the session (ignores priority tiers)."""
         logger.info("Ingesting all data for session %s", self._session_key)
-        await asyncio.gather(*(self._fetch_and_store(ep) for ep in ENDPOINTS))
+        endpoints = [ep for ep in ENDPOINTS if self._should_include(ep)]
+        await asyncio.gather(*(self._fetch_and_store(ep) for ep in endpoints))
 
     async def run(self, poll_interval: int = 10) -> None:
         if not self._initialized:

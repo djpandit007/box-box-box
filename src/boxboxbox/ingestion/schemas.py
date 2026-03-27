@@ -244,6 +244,23 @@ class SessionResultResponse(BaseModel):
     gap_to_leader: float | str | None = None
 
 
+class StartingGridResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    meeting_key: int
+    session_key: int
+    driver_number: int
+    position: int
+    date: datetime
+
+    @field_validator("date")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+
+
 ENDPOINT_MODELS: dict[str, type[BaseModel]] = {
     "sessions": SessionResponse,
     "drivers": DriverResponse,
@@ -257,4 +274,5 @@ ENDPOINT_MODELS: dict[str, type[BaseModel]] = {
     "weather": WeatherResponse,
     "team_radio": TeamRadioResponse,
     "session_result": SessionResultResponse,
+    "starting_grid": StartingGridResponse,
 }

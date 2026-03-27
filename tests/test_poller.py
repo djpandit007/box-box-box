@@ -1,8 +1,8 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from boxboxbox.ingestion.endpoints import ENDPOINTS, Priority
+from boxboxbox.ingestion.endpoints import ENDPOINTS, EndpointConfig, Priority, is_non_race_session
 from boxboxbox.ingestion.poller import Poller
 
 
@@ -112,3 +112,50 @@ class TestIncrementalDateTracking:
         await poller._fetch_and_store(ep)
 
         assert poller._last_dates["race_control"] == "2025-03-16T14:01:00"
+
+
+class TestIsNonRaceSession:
+    @pytest.mark.parametrize(
+        "session_type",
+        ["Practice 1", "Practice 2", "Practice 3", "Qualifying", "Sprint Shootout", "Sprint Qualifying"],
+    )
+    def test_non_race_types(self, session_type):
+        assert is_non_race_session(session_type) is True
+
+    @pytest.mark.parametrize("session_type", ["Race", "Sprint"])
+    def test_race_types(self, session_type):
+        assert is_non_race_session(session_type) is False
+
+
+class TestShouldInclude:
+    def _make_poller(self, mock_client, mock_session_factory, session_type):
+        poller = Poller(mock_client, mock_session_factory)
+        poller._initialized = True
+        poller._session_response = MagicMock(session_type=session_type)
+        return poller
+
+    def test_position_excluded_for_qualifying(self, mock_client, mock_session_factory):
+        poller = self._make_poller(mock_client, mock_session_factory, "Qualifying")
+        ep = EndpointConfig("position", "/position", Priority.P2)
+        assert not poller._should_include(ep)
+
+    def test_intervals_excluded_for_practice(self, mock_client, mock_session_factory):
+        poller = self._make_poller(mock_client, mock_session_factory, "Practice 1")
+        ep = EndpointConfig("intervals", "/intervals", Priority.P2)
+        assert not poller._should_include(ep)
+
+    def test_position_included_for_race(self, mock_client, mock_session_factory):
+        poller = self._make_poller(mock_client, mock_session_factory, "Race")
+        ep = EndpointConfig("position", "/position", Priority.P2)
+        assert poller._should_include(ep)
+
+    def test_laps_included_for_practice(self, mock_client, mock_session_factory):
+        poller = self._make_poller(mock_client, mock_session_factory, "Practice 1")
+        ep = EndpointConfig("laps", "/laps", Priority.P2, date_field="date_start")
+        assert poller._should_include(ep)
+
+    def test_starting_grid_included_for_all(self, mock_client, mock_session_factory):
+        for st in ("Race", "Qualifying", "Practice 1"):
+            poller = self._make_poller(mock_client, mock_session_factory, st)
+            ep = EndpointConfig("starting_grid", "/starting_grid", Priority.P3, date_field="")
+            assert poller._should_include(ep)
