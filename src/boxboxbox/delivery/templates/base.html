@@ -9,6 +9,7 @@
     .layout { display: grid; grid-template-columns: minmax(520px, 1fr) 2fr; gap: 1.5rem; }
     .leaderboard { width: 100%; border-collapse: collapse; }
     .leaderboard th, .leaderboard td { padding: .4rem .6rem; text-align: left; border-bottom: 1px solid #ddd; }
+    .leaderboard tbody tr { transition: opacity 0.2s ease; }
     .leaderboard td.driver-cell { white-space: nowrap; }
     .leaderboard td.team-cell { font-size: .85em; }
     .battle { background: #fff3cd; }
@@ -234,54 +235,95 @@ def show_weather_alert():
     div.textContent = "Rain has started!"
     alerts.appendChild(div)
 
+def _get_lap_info(best_laps, driver_number):
+    return best_laps.get(driver_number, best_laps.get(str(driver_number), {}))
+
 def build_leaderboard(snapshot):
     from js import document
     is_race = _session_type == "Race"
     positions = {p["driver_number"]: p["position"] for p in snapshot["positions"]}
     intervals = {i["driver_number"]: i["interval"] for i in snapshot["intervals"]}
     best_laps = snapshot.get("best_laps", {})
+
     # Find leader's best lap for gap calculation (practice/qualifying)
     _leader_lap = None
     if not is_race and best_laps:
         durations = [v.get("lap_duration") for v in best_laps.values() if v.get("lap_duration") is not None]
         _leader_lap = min(durations) if durations else None
-    sorted_drivers = sorted(positions, key=lambda d: positions[d])
+
+    # Sort: race by position, practice/qualifying by fastest lap (no time = bottom)
+    if is_race:
+        sorted_drivers = sorted(positions, key=lambda d: positions[d])
+    else:
+        def lap_sort_key(d):
+            info = _get_lap_info(best_laps, d)
+            dur = info.get("lap_duration") if info else None
+            return (0, dur) if dur is not None else (1, 0)
+        sorted_drivers = sorted(positions, key=lap_sort_key)
+
     tbody = document.getElementById("leaderboard-body")
-    tbody.innerHTML = ""
-    for driver_number in sorted_drivers:
-        pos = positions[driver_number]
+    existing = {}
+    for row in tbody.querySelectorAll("tr[data-driver]"):
+        existing[row.getAttribute("data-driver")] = row
+
+    seen = set()
+    for idx, driver_number in enumerate(sorted_drivers, 1):
+        key = str(driver_number)
+        seen.add(key)
+        pos = idx if not is_race else positions[driver_number]
         interval = intervals.get(driver_number)
-        info = _driver_info.get(driver_number, _driver_info.get(str(driver_number), {}))
+        info = _driver_info.get(driver_number, _driver_info.get(key, {}))
         name = info.get("name_acronym", "")
         team = info.get("team_name", "")
         colour = info.get("team_colour", "ccc")
         headshot = info.get("headshot_url", "") or ""
         img_html = f"<img src='{headshot}' width='24' height='24' style='border-radius:50%;vertical-align:middle;margin-right:4px'>" if headshot else ""
         team_dot = f"<span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#{colour};margin-right:6px;vertical-align:middle'></span>"
+
         if is_race:
-            col4 = f"<td class='interval'>{f'{interval:.3f}' if interval is not None else ''}</td>"
-            col5 = "<td class='trend trend-stable'>&ndash;</td>"
+            col4 = f"{interval:.3f}" if interval is not None else ""
+            col5_class = "trend trend-stable"
+            col5_text = "\\u2013"
         else:
-            lap_info = best_laps.get(driver_number, best_laps.get(str(driver_number), {}))
-            lap_time = format_lap_time(lap_info.get("lap_duration")) if lap_info else ""
+            lap_info = _get_lap_info(best_laps, driver_number)
+            col4 = format_lap_time(lap_info.get("lap_duration")) if lap_info else ""
             dur = lap_info.get("lap_duration") if lap_info else None
             if dur is not None and _leader_lap is not None and dur > _leader_lap:
-                gap_str = f"+{dur - _leader_lap:.3f}"
-            elif dur is not None and _leader_lap is not None and dur == _leader_lap:
-                gap_str = ""
+                col5_text = f"+{dur - _leader_lap:.3f}"
             else:
-                gap_str = ""
-            col4 = f"<td class='interval' style='font-family:monospace'>{lap_time}</td>"
-            col5 = f"<td class='trend' style='font-family:monospace'>{gap_str}</td>"
-        tr = document.createElement("tr")
-        tr.setAttribute("data-driver", str(driver_number))
-        tr.innerHTML = (
-            f"<td>{pos}</td>"
-            f"<td class='driver-cell'>{img_html}{name} <span style='color:#999;font-size:.8em'>#{driver_number}</span></td>"
-            f"<td class='team-cell'>{team_dot}{team}</td>"
-            f"{col4}{col5}"
-        )
+                col5_text = ""
+            col5_class = "trend"
+
+        if key in existing:
+            tr = existing[key]
+            cells = tr.querySelectorAll("td")
+            if cells.length >= 5:
+                cells[0].textContent = str(pos)
+                cells[3].textContent = col4
+                cells[4].className = col5_class
+                cells[4].textContent = col5_text
+        else:
+            tr = document.createElement("tr")
+            tr.setAttribute("data-driver", key)
+            if is_race:
+                col4_html = f"<td class='interval'>{col4}</td>"
+                col5_html = f"<td class='{col5_class}'>{col5_text}</td>"
+            else:
+                col4_html = f"<td class='interval' style='font-family:monospace'>{col4}</td>"
+                col5_html = f"<td class='{col5_class}' style='font-family:monospace'>{col5_text}</td>"
+            tr.innerHTML = (
+                f"<td>{pos}</td>"
+                f"<td class='driver-cell'>{img_html}{name} <span style='color:#999;font-size:.8em'>#{driver_number}</span></td>"
+                f"<td class='team-cell'>{team_dot}{team}</td>"
+                f"{col4_html}{col5_html}"
+            )
+        # appendChild moves existing nodes, reordering them
         tbody.appendChild(tr)
+
+    # Remove drivers no longer in the standings
+    for key, row in existing.items():
+        if key not in seen:
+            row.remove()
 
 def process_snapshot(snapshot):
     global prev_snapshot
