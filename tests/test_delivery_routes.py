@@ -228,6 +228,9 @@ class TestReplayRouter:
 
         assert resp.status_code == 200
         data = resp.json()
+        assert data["session_name"] == "Race"
+        assert data["session_type"] == "Race"
+        assert data["circuit_short_name"] == "Monza"
         assert data["session_start"] == "2026-09-07T13:00:00"
         assert data["session_end"] == "2026-09-07T15:00:00"
         assert len(data["events"]["position"]) == 1
@@ -261,6 +264,9 @@ class TestReplayRouter:
 
         assert resp.status_code == 200
         data = resp.json()
+        assert data["session_name"] is None
+        assert data["session_type"] is None
+        assert data["circuit_short_name"] is None
         assert data["session_start"] is None
         assert data["session_end"] is None
         assert data["events"]["position"] == []

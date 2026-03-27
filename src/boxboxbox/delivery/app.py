@@ -22,6 +22,8 @@ def create_app(
     session_key: int,
     *,
     is_live: bool = True,
+    session_name: str = "",
+    session_type: str = "",
 ) -> FastAPI:
     app = FastAPI(title="box-box-box")
 
@@ -30,6 +32,8 @@ def create_app(
     app.state.manager = manager
     app.state.session_key = session_key
     app.state.is_live = is_live
+    app.state.session_name = session_name
+    app.state.session_type = session_type
     app.state.jinja_env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), keep_trailing_newline=True)
 
     app.include_router(sessions.router)
@@ -44,6 +48,8 @@ def create_app(
             template.render(
                 session_key=request.app.state.session_key,
                 is_live=request.app.state.is_live,
+                session_name=request.app.state.session_name,
+                session_type=request.app.state.session_type,
             )
         )
 

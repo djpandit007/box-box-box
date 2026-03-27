@@ -80,6 +80,9 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
         ]
 
     return {
+        "session_name": session.session_name if session else None,
+        "session_type": session.session_type if session else None,
+        "circuit_short_name": session.circuit_short_name if session else None,
         "session_start": session_start,
         "session_end": session_end,
         "events": {

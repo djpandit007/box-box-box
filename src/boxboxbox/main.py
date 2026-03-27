@@ -128,7 +128,15 @@ async def async_main() -> None:
     # Always start the delivery server — available for both live and finished sessions.
     is_live = not _session_is_finished(poller.session_info.date_end)
     manager = ConnectionManager()
-    app = create_app(session_factory, embedding_client, manager, poller.session_key, is_live=is_live)
+    app = create_app(
+        session_factory,
+        embedding_client,
+        manager,
+        poller.session_key,
+        is_live=is_live,
+        session_name=poller.session_info.session_name,
+        session_type=poller.session_info.session_type,
+    )
     web_config = uvicorn.Config(app, host=WEB_HOST, port=WEB_PORT, log_level="warning")
     web_task = asyncio.create_task(uvicorn.Server(web_config).serve())
     snapshot_task = (

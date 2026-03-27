@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>box-box-box &mdash; {% if is_live %}Live Race{% else %}Race Replay{% endif %}</title>
+  <title>box-box-box &mdash; {{ session_name }} &mdash; {% if is_live %}Live{% else %}Replay{% endif %}</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 1rem; }
     .layout { display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem; }
@@ -23,10 +23,12 @@
     .replay-bar button:hover { background: #f0f0f0; }
     .replay-bar .time-label { font-family: monospace; font-size: .9rem; min-width: 5.5rem; }
     .replay-loading { text-align: center; padding: 2rem; color: #888; }
+    .session-title { font-size: 1.1rem; font-weight: normal; color: #555; margin: 0 0 1rem; }
   </style>
 </head>
 <body>
   <h1>box-box-box</h1>
+  {% if session_name %}<p class="session-title">{{ session_name }} &mdash; {{ session_type }}</p>{% endif %}
 
   <div id="alerts"></div>
 
@@ -50,7 +52,7 @@
         <div id="summary-timeline">
           <template x-for="summary in visibleSummaries" :key="summary.window_end">
             <article class="summary-card">
-              <div class="summary-card__time" x-text="summary.window_start.substring(11, 19) + ' \u2014 ' + summary.window_end.substring(11, 19)"></div>
+              <div class="summary-card__time" x-text="utcToLocal(summary.window_start) + ' \u2014 ' + utcToLocal(summary.window_end)"></div>
               <p x-text="summary.summary_text"></p>
               <template x-if="summary.audio_url">
                 <audio class="summary-card__audio" controls :src="summary.audio_url"></audio>
@@ -246,6 +248,12 @@ def process_snapshot(snapshot):
   {% if not is_live %}
   <!-- Replay controller (replay mode only) -->
   <script>
+    // Convert naive-UTC ISO string to local time display (HH:MM:SS)
+    function utcToLocal(isoStr) {
+      const d = new Date(isoStr + "Z");
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+    }
+
     function replayController() {
       return {
         loaded: false,
@@ -282,11 +290,12 @@ def process_snapshot(snapshot):
           const events = this.replayData.events;
           for (const source of ["position", "intervals", "weather"]) {
             for (const evt of events[source]) {
-              // Quantize to 10-second boundaries
-              const d = new Date(evt.event_date);
-              d.setMilliseconds(0);
-              d.setSeconds(Math.floor(d.getSeconds() / 10) * 10);
-              tsSet.add(d.toISOString());
+              // Quantize to 10-second boundaries using string manipulation
+              // to avoid Date timezone conversion issues with naive ISO strings
+              const ts = evt.event_date;
+              const secs = parseInt(ts.substring(17, 19), 10);
+              const quantized = ts.substring(0, 17) + String(Math.floor(secs / 10) * 10).padStart(2, "0");
+              tsSet.add(quantized);
             }
           }
           this.ticks = Array.from(tsSet).sort();
@@ -371,7 +380,7 @@ def process_snapshot(snapshot):
         get currentTimeLabel() {
           if (!this.ticks.length) return "--:--:--";
           const ts = this.ticks[this.currentTick];
-          return ts ? ts.substring(11, 19) : "--:--:--";
+          return ts ? utcToLocal(ts) : "--:--:--";
         },
 
         get visibleSummaries() {
