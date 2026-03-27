@@ -29,4 +29,5 @@ ENDPOINTS: tuple[EndpointConfig, ...] = (
     EndpointConfig("weather", "/weather", Priority.P3),
     EndpointConfig("stints", "/stints", Priority.P3, date_field=""),  # no date field; re-fetch entirely
     EndpointConfig("team_radio", "/team_radio", Priority.P3),
+    EndpointConfig("session_result", "/session_result", Priority.P3, date_field=""),  # no date; re-fetch entirely
 )

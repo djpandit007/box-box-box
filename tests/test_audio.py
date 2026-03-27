@@ -93,7 +93,7 @@ class TestGenerateAudio:
         assert call_kwargs.args[2] == "lead-id"
         assert call_kwargs.args[3] == "analyst-id"
         assert result is not None
-        assert result == str(tmp_path / "digest_99.mp3")
+        assert result == str(tmp_path / "digest_99_race.mp3")
         assert pathlib.Path(result).read_bytes() == fake_audio
 
     @pytest.mark.asyncio
@@ -109,7 +109,7 @@ class TestGenerateAudio:
             with patch("boxboxbox.audio.tts.elevenlabs_tts", new=AsyncMock(return_value=b"mp3")):
                 result = await generate_audio(_DIALOGUE, 55)
         assert result is not None
-        assert "digest_55.mp3" in result
+        assert "digest_55_race.mp3" in result
 
     @pytest.mark.asyncio
     async def test_returns_none_for_empty_dialogue(self, tmp_path):

@@ -31,10 +31,11 @@ def _make_summary(window_start: str, window_end: str, text: str) -> Summary:
     return s
 
 
-def _make_session(name: str = "Race", circuit: str = "Monza") -> Session:
+def _make_session(name: str = "Race", circuit: str = "Monza", session_type: str = "Race") -> Session:
     s = MagicMock(spec=Session)
     s.session_name = name
     s.circuit_short_name = circuit
+    s.session_type = session_type
     return s
 
 
@@ -97,8 +98,16 @@ class TestGenerateDigest:
         session_result = MagicMock()
         session_result.scalar_one_or_none.return_value = session_obj
 
+        standings_result = MagicMock()
+        standings_result.scalars.return_value.all.return_value = []
+
+        driver_result = MagicMock()
+        driver_result.scalars.return_value.all.return_value = []
+
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[no_existing_digest, summaries_result, session_result])
+        db.execute = AsyncMock(
+            side_effect=[no_existing_digest, summaries_result, session_result, standings_result, driver_result]
+        )
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -199,5 +208,5 @@ class TestGenerateDigest:
         agent.run_stream.assert_not_called()
         embedding_client.embed.assert_not_called()
         db.add.assert_not_called()
-        mock_audio.assert_called_once_with("Existing digest text.", 12345)
+        mock_audio.assert_called_once_with("Existing digest text.", 12345, "Race")
         db.commit.assert_called_once()

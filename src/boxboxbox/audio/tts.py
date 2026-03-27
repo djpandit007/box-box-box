@@ -32,7 +32,7 @@ def strip_emotion_tags(text: str) -> str:
     return re.sub(r"\[.*?\]", "", text).strip()
 
 
-async def generate_audio(summary_text: str, session_key: int) -> str | None:
+async def generate_audio(summary_text: str, session_key: int, session_type: str = "Race") -> str | None:
     """
     Generate TTS audio for a post-race digest and save it locally.
 
@@ -58,7 +58,8 @@ async def generate_audio(summary_text: str, session_key: int) -> str | None:
 
     logger.info("Generating ElevenLabs dialogue audio for session %s", session_key)
     audio_bytes = await elevenlabs_tts(lines, api_key, lead_voice_id, analyst_voice_id)
-    file_path = pathlib.Path(audio_dir) / f"digest_{session_key}.mp3"
+    slug = session_type.lower().replace(" ", "_")
+    file_path = pathlib.Path(audio_dir) / f"digest_{session_key}_{slug}.mp3"
 
     file_path.write_bytes(audio_bytes)
     logger.info("Audio saved to %s", file_path)

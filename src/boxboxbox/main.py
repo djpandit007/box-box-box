@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from boxboxbox.config import settings
 from boxboxbox.db import get_engine, get_session_factory
 from boxboxbox.delivery.app import WEB_HOST, WEB_PORT, create_app
-from boxboxbox.delivery.ws import ConnectionManager, SNAPSHOT_INTERVAL_SECONDS
+from boxboxbox.delivery.ws import SNAPSHOT_INTERVAL_SECONDS, ConnectionManager
 from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.ingestion.poller import Poller
 from boxboxbox.models import RaceEvent, Summary, SummaryType
@@ -160,7 +160,13 @@ async def async_main() -> None:
                 logger.info(
                     "Digest text exists but audio missing for session %s — generating audio.", poller.session_key
                 )
-                await generate_digest(session_factory, digest_agent, embedding_client, poller.session_key)
+                await generate_digest(
+                    session_factory,
+                    digest_agent,
+                    embedding_client,
+                    poller.session_key,
+                    session_type=poller.session_info.session_type,
+                )
             else:
                 logger.info("Ingesting historical data for %s...", poller.session_info.session_name)
                 await poller.ingest_all()
@@ -171,11 +177,18 @@ async def async_main() -> None:
                     agent=summary_agent,
                     embedding_client=embedding_client,
                     session_key=poller.session_key,
+                    session_type=poller.session_info.session_type,
                     interval_seconds=settings.SUMMARY_INTERVAL_SECONDS,
                 )
 
                 logger.info("Generating post-race digest...")
-                await generate_digest(session_factory, digest_agent, embedding_client, poller.session_key)
+                await generate_digest(
+                    session_factory,
+                    digest_agent,
+                    embedding_client,
+                    poller.session_key,
+                    session_type=poller.session_info.session_type,
+                )
 
             logger.info("Web UI at http://localhost:%d — Ctrl-C to stop.", WEB_PORT)
             await web_task
@@ -190,6 +203,7 @@ async def async_main() -> None:
                 agent=summary_agent,
                 embedding_client=embedding_client,
                 session_key=poller.session_key,
+                session_type=poller.session_info.session_type,
                 interval_seconds=settings.SUMMARY_INTERVAL_SECONDS,
                 grace_seconds=settings.SESSION_END_GRACE_SECONDS,
                 on_summary=on_summary,
@@ -199,7 +213,13 @@ async def async_main() -> None:
 
             try:
                 await summariser.run()
-                await generate_digest(session_factory, digest_agent, embedding_client, poller.session_key)
+                await generate_digest(
+                    session_factory,
+                    digest_agent,
+                    embedding_client,
+                    poller.session_key,
+                    session_type=poller.session_info.session_type,
+                )
                 logger.info("Web UI at http://localhost:%d — Ctrl-C to stop.", WEB_PORT)
                 await web_task
             finally:
