@@ -5,10 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>box-box-box &mdash; {{ session_name }} {{ country_name }}/{{ circuit_short_name }} &mdash; {% if is_live %}Live{% else %}Replay{% endif %}</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 1rem; }
-    .layout { display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem; }
+    body { font-family: system-ui, sans-serif; max-width: 1400px; margin: 0 auto; padding: 1rem; }
+    .layout { display: grid; grid-template-columns: minmax(520px, 1fr) 2fr; gap: 1.5rem; }
     .leaderboard { width: 100%; border-collapse: collapse; }
     .leaderboard th, .leaderboard td { padding: .4rem .6rem; text-align: left; border-bottom: 1px solid #ddd; }
+    .leaderboard td.driver-cell { white-space: nowrap; }
+    .leaderboard td.team-cell { font-size: .85em; }
     .battle { background: #fff3cd; }
     .trend-closing { color: green; }
     .trend-opening { color: red; }
@@ -108,6 +110,7 @@
         }
         await waitForPyodide();
         window._setDrivers(drivers);
+        window._setSessionType("{{ session_type }}");
       } catch (e) { console.error("Failed to load driver info:", e); }
     })();
 
@@ -146,10 +149,22 @@ STABLE_TOLERANCE = 0.1
 
 prev_snapshot = None
 _driver_info = {}
+_session_type = "Race"
 
 def set_drivers(drivers_dict):
     global _driver_info
     _driver_info = drivers_dict
+
+def set_session_type(st):
+    global _session_type
+    _session_type = st
+
+def format_lap_time(seconds):
+    if seconds is None:
+        return ""
+    mins = int(seconds // 60)
+    secs = seconds % 60
+    return f"{mins}:{secs:06.3f}"
 
 def reset_state():
     global prev_snapshot
@@ -203,8 +218,15 @@ def show_weather_alert():
 
 def build_leaderboard(snapshot):
     from js import document
+    is_race = _session_type == "Race"
     positions = {p["driver_number"]: p["position"] for p in snapshot["positions"]}
     intervals = {i["driver_number"]: i["interval"] for i in snapshot["intervals"]}
+    best_laps = snapshot.get("best_laps", {})
+    # Find leader's best lap for gap calculation (practice/qualifying)
+    _leader_lap = None
+    if not is_race and best_laps:
+        durations = [v.get("lap_duration") for v in best_laps.values() if v.get("lap_duration") is not None]
+        _leader_lap = min(durations) if durations else None
     sorted_drivers = sorted(positions, key=lambda d: positions[d])
     tbody = document.getElementById("leaderboard-body")
     tbody.innerHTML = ""
@@ -218,14 +240,28 @@ def build_leaderboard(snapshot):
         headshot = info.get("headshot_url", "") or ""
         img_html = f"<img src='{headshot}' width='24' height='24' style='border-radius:50%;vertical-align:middle;margin-right:4px'>" if headshot else ""
         team_dot = f"<span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#{colour};margin-right:6px;vertical-align:middle'></span>"
+        if is_race:
+            col4 = f"<td class='interval'>{f'{interval:.3f}' if interval is not None else ''}</td>"
+            col5 = "<td class='trend trend-stable'>&ndash;</td>"
+        else:
+            lap_info = best_laps.get(driver_number, best_laps.get(str(driver_number), {}))
+            lap_time = format_lap_time(lap_info.get("lap_duration")) if lap_info else ""
+            dur = lap_info.get("lap_duration") if lap_info else None
+            if dur is not None and _leader_lap is not None and dur > _leader_lap:
+                gap_str = f"+{dur - _leader_lap:.3f}"
+            elif dur is not None and _leader_lap is not None and dur == _leader_lap:
+                gap_str = ""
+            else:
+                gap_str = ""
+            col4 = f"<td class='interval' style='font-family:monospace'>{lap_time}</td>"
+            col5 = f"<td class='trend' style='font-family:monospace'>{gap_str}</td>"
         tr = document.createElement("tr")
         tr.setAttribute("data-driver", str(driver_number))
         tr.innerHTML = (
             f"<td>{pos}</td>"
-            f"<td>{img_html}{name} <span style='color:#999;font-size:.8em'>#{driver_number}</span></td>"
-            f"<td>{team_dot}{team}</td>"
-            f"<td class='interval'>{f'{interval:.3f}' if interval is not None else ''}</td>"
-            f"<td class='trend trend-stable'>&ndash;</td>"
+            f"<td class='driver-cell'>{img_html}{name} <span style='color:#999;font-size:.8em'>#{driver_number}</span></td>"
+            f"<td class='team-cell'>{team_dot}{team}</td>"
+            f"{col4}{col5}"
         )
         tbody.appendChild(tr)
 
@@ -279,6 +315,10 @@ def process_snapshot(snapshot):
         pyodide.globals.set("_drivers_js", driversObj);
         pyodide.runPython("set_drivers(_drivers_js.to_py())");
       };
+      window._setSessionType = function(st) {
+        pyodide.globals.set("_st_js", st);
+        pyodide.runPython("set_session_type(str(_st_js))");
+      };
       window._pyodideReady = true;
     }
 
@@ -317,6 +357,9 @@ def process_snapshot(snapshot):
           await this.waitForPyodide();
           if (this.replayData.drivers) {
             window._setDrivers(this.replayData.drivers);
+          }
+          if (this.replayData.session_type) {
+            window._setSessionType(this.replayData.session_type);
           }
           this.applySnapshot();
         },
@@ -403,7 +446,20 @@ def process_snapshot(snapshot):
             }
           }
 
-          return { positions, intervals, weather };
+          // Best lap per driver up to timestamp (for practice/qualifying)
+          const bestLaps = {};
+          if (events.laps && this.replayData.session_type !== "Race") {
+            for (const evt of events.laps) {
+              if (evt.event_date <= timestamp && evt.lap_duration != null) {
+                const prev = bestLaps[evt.driver_number];
+                if (!prev || evt.lap_duration < prev.lap_duration) {
+                  bestLaps[evt.driver_number] = { lap_duration: evt.lap_duration, lap_number: evt.lap_number };
+                }
+              }
+            }
+          }
+
+          return { positions, intervals, weather, best_laps: bestLaps };
         },
 
         togglePlay() {

@@ -22,7 +22,7 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
             select(RaceEvent.source, RaceEvent.driver_number, RaceEvent.event_date, RaceEvent.data)
             .where(
                 RaceEvent.session_key == session_key,
-                RaceEvent.source.in_(["position", "intervals", "weather"]),
+                RaceEvent.source.in_(["position", "intervals", "weather", "laps"]),
             )
             .order_by(RaceEvent.event_date)
         )
@@ -31,6 +31,7 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
         position_events = []
         interval_events = []
         weather_events = []
+        lap_events = []
 
         for source, driver_number, event_date, data in rows:
             ts = event_date.isoformat()
@@ -57,6 +58,15 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
                         "rainfall": data.get("rainfall", 0),
                         "air_temp": data.get("air_temperature", 0),
                         "track_temp": data.get("track_temperature", 0),
+                    }
+                )
+            elif source == "laps":
+                lap_events.append(
+                    {
+                        "driver_number": driver_number,
+                        "event_date": ts,
+                        "lap_duration": data.get("lap_duration"),
+                        "lap_number": data.get("lap_number"),
                     }
                 )
 
@@ -102,6 +112,7 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
             "position": position_events,
             "intervals": interval_events,
             "weather": weather_events,
+            "laps": lap_events,
         },
         "drivers": drivers,
         "summaries": summaries,

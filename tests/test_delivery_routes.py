@@ -215,6 +215,7 @@ class TestReplayRouter:
                 datetime(2026, 9, 7, 13, 0, 10),
                 {"rainfall": 0, "air_temperature": 22, "track_temperature": 40},
             ),
+            ("laps", 1, datetime(2026, 9, 7, 13, 1, 0), {"lap_duration": 92.5, "lap_number": 3}),
         ]
 
         # Mock drivers query
@@ -252,6 +253,9 @@ class TestReplayRouter:
         assert len(data["events"]["weather"]) == 1
         assert data["events"]["weather"][0]["rainfall"] == 0
         assert data["events"]["weather"][0]["air_temp"] == 22
+        assert len(data["events"]["laps"]) == 1
+        assert data["events"]["laps"][0]["lap_duration"] == 92.5
+        assert data["events"]["laps"][0]["lap_number"] == 3
         # Driver metadata
         assert "1" in data["drivers"]
         assert data["drivers"]["1"]["name_acronym"] == "VER"
@@ -292,5 +296,6 @@ class TestReplayRouter:
         assert data["events"]["position"] == []
         assert data["events"]["intervals"] == []
         assert data["events"]["weather"] == []
+        assert data["events"]["laps"] == []
         assert data["drivers"] == {}
         assert data["summaries"] == []
