@@ -60,7 +60,9 @@ Format rules (STRICT):
 - Do NOT add any text before the first "Lead:" line or after the last line
 - Do NOT use markdown, bullet points, or section headers
 - Keep driver names natural (full name on first mention, surname after)
-- The second-to-last line must be Analyst delivering a final tactical or statistical observation
+- The second-to-last line must be Analyst with [analytical] reading the complete final
+  classification — every finisher in order, rapid-fire, in one breath
+  (e.g. "Final order: Verstappen, Hamilton, Leclerc, Norris, Sainz, Russell, Alonso, Piastri, Stroll, Perez…")
 - The final line must be Lead with [dramatic] or [reflective] delivering a single sign-off sentence \
 that names the winner and closes the broadcast (e.g. "Max Verstappen wins in Melbourne — a masterclass \
 from lights to flag.")
