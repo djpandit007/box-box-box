@@ -203,5 +203,5 @@ class TestGenerateDigest:
         agent.run_stream.assert_not_called()
         embedding_client.embed.assert_not_called()
         db.add.assert_not_called()
-        mock_audio.assert_called_once_with("Existing digest text.", 12345)
+        mock_audio.assert_called_once_with("Existing digest text.", 12345, "Race")
         db.commit.assert_called_once()

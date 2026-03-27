@@ -79,7 +79,13 @@ async def async_main() -> None:
                 logger.info(
                     "Digest text exists but audio missing for session %s — generating audio.", poller.session_key
                 )
-                await generate_digest(session_factory, digest_agent, embedding_client, poller.session_key)
+                await generate_digest(
+                    session_factory,
+                    digest_agent,
+                    embedding_client,
+                    poller.session_key,
+                    session_type=poller.session_info.session_type,
+                )
             else:
                 logger.info("Ingesting historical data for %s...", poller.session_info.session_name)
                 await poller.ingest_all()
@@ -95,7 +101,13 @@ async def async_main() -> None:
                 )
 
                 logger.info("Generating post-race digest...")
-                await generate_digest(session_factory, digest_agent, embedding_client, poller.session_key)
+                await generate_digest(
+                    session_factory,
+                    digest_agent,
+                    embedding_client,
+                    poller.session_key,
+                    session_type=poller.session_info.session_type,
+                )
         else:
             # Live session — run real-time polling + summarisation loop
             summariser = SummarisationLoop(
@@ -112,7 +124,13 @@ async def async_main() -> None:
 
             try:
                 await summariser.run()
-                await generate_digest(session_factory, digest_agent, embedding_client, poller.session_key)
+                await generate_digest(
+                    session_factory,
+                    digest_agent,
+                    embedding_client,
+                    poller.session_key,
+                    session_type=poller.session_info.session_type,
+                )
             finally:
                 poller_task.cancel()
                 try:

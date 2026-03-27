@@ -25,6 +25,7 @@ async def generate_digest(
     digest_agent: Agent,
     embedding_client: EmbeddingClient,
     session_key: int,
+    session_type: str = "Race",
 ) -> str:
     """Generate a post-race digest from all summaries and store it."""
     async with session_factory() as db:
@@ -45,7 +46,7 @@ async def generate_digest(
             # Digest text exists but audio is missing — generate audio only.
             logger.info("Digest text exists but audio is missing, generating audio only.")
             if settings.ELEVENLABS_API_KEY:
-                audio_url = await generate_audio(existing_digest.summary_text, session_key)
+                audio_url = await generate_audio(existing_digest.summary_text, session_key, session_type)
                 if audio_url:
                     existing_digest.audio_url = audio_url
                     await db.commit()
@@ -103,7 +104,7 @@ async def generate_digest(
         await db.commit()
 
         if settings.ELEVENLABS_API_KEY:
-            audio_url = await generate_audio(digest_text, session_key)
+            audio_url = await generate_audio(digest_text, session_key, session_type)
             if audio_url:
                 digest.audio_url = audio_url
                 await db.commit()
