@@ -9,7 +9,7 @@
     .layout { display: grid; grid-template-columns: minmax(520px, 1fr) 2fr; gap: 1.5rem; }
     .leaderboard { width: 100%; border-collapse: collapse; }
     .leaderboard th, .leaderboard td { padding: .4rem .6rem; text-align: left; border-bottom: 1px solid #ddd; }
-    .leaderboard tbody tr { transition: opacity 0.2s ease; }
+    .leaderboard tbody tr { transition: transform 0.3s ease; }
     .leaderboard td.driver-cell { white-space: nowrap; }
     .leaderboard td.team-cell { font-size: .85em; }
     .battle { background: #fff3cd; }
@@ -27,7 +27,7 @@
     .replay-bar .time-label { font-family: monospace; font-size: .9rem; min-width: 5.5rem; }
     .replay-loading { text-align: center; padding: 2rem; color: #888; }
     .session-title { font-size: 1.1rem; font-weight: normal; color: #555; margin: 0 0 1rem; }
-    .digest-section { margin-top: 1.5rem; border-top: 2px solid #e10600; padding-top: 1rem; }
+    .digest-section { margin-bottom: 1.5rem; border-bottom: 2px solid #e10600; padding-bottom: 1rem; }
     .digest-toggle { background: none; border: none; font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 0; color: #333; }
     .digest-toggle:hover { color: #e10600; }
     .digest-content { margin-top: .75rem; line-height: 1.6; }
@@ -50,6 +50,19 @@
     </div>
     <div class="replay-loading" x-show="!loaded">Loading replay data&hellip;</div>
 
+    <!-- Digest section (collapsed, auto-reveals at end of session) -->
+    <div x-show="loaded && digest" class="digest-section">
+      <button @click="digestOpen = !digestOpen" class="digest-toggle">
+        Session Digest <span x-text="digestOpen ? '\u25be' : '\u25b8'"></span>
+      </button>
+      <div x-show="digestOpen" x-transition class="digest-content">
+        <p x-text="digest ? digest.summary_text : ''"></p>
+        <template x-if="digest && digest.audio_url">
+          <audio controls :src="digest.audio_url" style="width:100%;margin-top:.5rem"></audio>
+        </template>
+      </div>
+    </div>
+
     <div class="layout" x-show="loaded">
       <div>
         <h2>Standings</h2>
@@ -68,19 +81,6 @@
             </article>
           </template>
         </div>
-      </div>
-    </div>
-
-    <!-- Digest section -->
-    <div x-show="loaded && digest" class="digest-section">
-      <button @click="digestOpen = !digestOpen" class="digest-toggle">
-        Session Digest <span x-text="digestOpen ? '\u25be' : '\u25b8'"></span>
-      </button>
-      <div x-show="digestOpen" x-transition class="digest-content">
-        <p x-text="digest ? digest.summary_text : ''"></p>
-        <template x-if="digest && digest.audio_url">
-          <audio controls :src="digest.audio_url" style="width:100%;margin-top:.5rem"></audio>
-        </template>
       </div>
     </div>
   </div>
@@ -364,9 +364,41 @@ def process_snapshot(snapshot):
     prev_snapshot = snapshot
 `);
 
+      // FLIP animation helpers for smooth leaderboard reordering
+      window._snapshotPositions = function() {
+        var tbody = document.getElementById("leaderboard-body");
+        var positions = {};
+        var rows = tbody.querySelectorAll("tr[data-driver]");
+        for (var i = 0; i < rows.length; i++) {
+          positions[rows[i].getAttribute("data-driver")] = rows[i].getBoundingClientRect().top;
+        }
+        window._rowPositions = positions;
+      };
+      window._animateReorder = function() {
+        var tbody = document.getElementById("leaderboard-body");
+        var oldPositions = window._rowPositions || {};
+        var rows = tbody.querySelectorAll("tr[data-driver]");
+        for (var i = 0; i < rows.length; i++) {
+          var row = rows[i];
+          var key = row.getAttribute("data-driver");
+          var oldTop = oldPositions[key];
+          if (oldTop === undefined) continue;
+          var newTop = row.getBoundingClientRect().top;
+          var delta = oldTop - newTop;
+          if (Math.abs(delta) < 1) continue;
+          row.style.transition = "none";
+          row.style.transform = "translateY(" + delta + "px)";
+          row.offsetHeight; // force reflow
+          row.style.transition = "transform 0.3s ease";
+          row.style.transform = "";
+        }
+      };
+
       window._processSnapshot = function(msg) {
+        window._snapshotPositions();
         pyodide.globals.set("_snapshot", msg);
         pyodide.runPython("process_snapshot(_snapshot.to_py())");
+        window._animateReorder();
       };
       window._resetState = function() {
         pyodide.runPython("reset_state()");
