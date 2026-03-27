@@ -228,6 +228,23 @@ class TeamRadioResponse(BaseModel):
         return v
 
 
+class SessionResultResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    date: datetime
+    session_key: int
+    meeting_key: int
+    driver_number: int
+    position: int
+
+    @field_validator("date")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+
+
 ENDPOINT_MODELS: dict[str, type[BaseModel]] = {
     "sessions": SessionResponse,
     "drivers": DriverResponse,
@@ -240,4 +257,5 @@ ENDPOINT_MODELS: dict[str, type[BaseModel]] = {
     "stints": StintResponse,
     "weather": WeatherResponse,
     "team_radio": TeamRadioResponse,
+    "session_result": SessionResultResponse,
 }
