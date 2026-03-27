@@ -102,6 +102,16 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
             for s in summaries_result.scalars().all()
         ]
 
+        # Post-session digest
+        digest_result = await db.execute(
+            select(Summary)
+            .where(Summary.session_key == session_key, Summary.summary_type == SummaryType.digest)
+            .order_by(Summary.window_end.desc())
+            .limit(1)
+        )
+        digest_row = digest_result.scalar_one_or_none()
+        digest = {"summary_text": digest_row.summary_text, "audio_url": digest_row.audio_url} if digest_row else None
+
     return {
         "session_name": session.session_name if session else None,
         "session_type": session.session_type if session else None,
@@ -116,4 +126,5 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
         },
         "drivers": drivers,
         "summaries": summaries,
+        "digest": digest,
     }

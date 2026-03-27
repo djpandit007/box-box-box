@@ -26,6 +26,11 @@
     .replay-bar .time-label { font-family: monospace; font-size: .9rem; min-width: 5.5rem; }
     .replay-loading { text-align: center; padding: 2rem; color: #888; }
     .session-title { font-size: 1.1rem; font-weight: normal; color: #555; margin: 0 0 1rem; }
+    .digest-section { margin-top: 1.5rem; border-top: 2px solid #e10600; padding-top: 1rem; }
+    .digest-toggle { background: none; border: none; font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 0; color: #333; }
+    .digest-toggle:hover { color: #e10600; }
+    .digest-content { margin-top: .75rem; line-height: 1.6; }
+    .digest-content p { white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -62,6 +67,19 @@
             </article>
           </template>
         </div>
+      </div>
+    </div>
+
+    <!-- Digest section -->
+    <div x-show="loaded && digest" class="digest-section">
+      <button @click="digestOpen = !digestOpen" class="digest-toggle">
+        Session Digest <span x-text="digestOpen ? '\u25be' : '\u25b8'"></span>
+      </button>
+      <div x-show="digestOpen" x-transition class="digest-content">
+        <p x-text="digest ? digest.summary_text : ''"></p>
+        <template x-if="digest && digest.audio_url">
+          <audio controls :src="digest.audio_url" style="width:100%;margin-top:.5rem"></audio>
+        </template>
       </div>
     </div>
   </div>
@@ -339,6 +357,8 @@ def process_snapshot(snapshot):
         loaded: false,
         replayData: null,
         allSummaries: [],
+        digest: null,
+        digestOpen: false,
         ticks: [],
         currentTick: 0,
         maxTick: 0,
@@ -351,6 +371,7 @@ def process_snapshot(snapshot):
           const resp = await fetch("/api/sessions/{{ session_key }}/replay");
           this.replayData = await resp.json();
           this.allSummaries = this.replayData.summaries;
+          this.digest = this.replayData.digest || null;
           this.buildTicks();
           this.loaded = true;
           // Wait for Pyodide to be ready, then set driver info and show initial state
@@ -373,17 +394,23 @@ def process_snapshot(snapshot):
 
         buildTicks() {
           const tsSet = new Set();
+          const sessionStart = this.replayData.session_start;
+          const sessionEnd = this.replayData.session_end;
           // Session boundaries anchor the slider endpoints
-          if (this.replayData.session_start) tsSet.add(this.replayData.session_start);
-          if (this.replayData.session_end) tsSet.add(this.replayData.session_end);
+          if (sessionStart) tsSet.add(sessionStart);
+          if (sessionEnd) tsSet.add(sessionEnd);
           const events = this.replayData.events;
-          for (const source of ["position", "intervals", "weather"]) {
+          for (const source of ["position", "intervals", "weather", "laps"]) {
+            if (!events[source]) continue;
             for (const evt of events[source]) {
               // Quantize to 10-second boundaries using string manipulation
               // to avoid Date timezone conversion issues with naive ISO strings
               const ts = evt.event_date;
               const secs = parseInt(ts.substring(17, 19), 10);
               const quantized = ts.substring(0, 17) + String(Math.floor(secs / 10) * 10).padStart(2, "0");
+              // Only include ticks within session bounds
+              if (sessionStart && quantized < sessionStart) continue;
+              if (sessionEnd && quantized > sessionEnd) continue;
               tsSet.add(quantized);
             }
           }
@@ -409,6 +436,11 @@ def process_snapshot(snapshot):
 
           const snapshot = this.buildSnapshotAtTime(ts);
           window._processSnapshot(snapshot);
+
+          // Auto-reveal digest when slider reaches the end
+          if (this.currentTick === this.maxTick && this.digest) {
+            this.digestOpen = true;
+          }
         },
 
         buildSnapshotAtTime(timestamp) {

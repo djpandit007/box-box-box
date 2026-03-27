@@ -234,7 +234,14 @@ class TestReplayRouter:
         summaries_result = MagicMock()
         summaries_result.scalars.return_value.all.return_value = [summary_obj]
 
-        app, _ = _make_app([session_result, events_result, drivers_result, summaries_result])
+        # Mock digest query
+        digest_obj = _make_summary_obj(text="Verstappen wins the race.")
+        digest_obj.summary_type = SummaryType.digest
+        digest_obj.audio_url = "/audio/digest.mp3"
+        digest_result = MagicMock()
+        digest_result.scalar_one_or_none.return_value = digest_obj
+
+        app, _ = _make_app([session_result, events_result, drivers_result, summaries_result, digest_result])
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/sessions/1234/replay")
 
@@ -263,6 +270,10 @@ class TestReplayRouter:
         assert data["drivers"]["1"]["headshot_url"] == "https://example.com/ver.png"
         assert len(data["summaries"]) == 1
         assert data["summaries"][0]["summary_text"] == "Hamilton leads."
+        # Digest
+        assert data["digest"] is not None
+        assert data["digest"]["summary_text"] == "Verstappen wins the race."
+        assert data["digest"]["audio_url"] == "/audio/digest.mp3"
 
     @pytest.mark.asyncio
     async def test_replay_empty_session(self):
@@ -282,7 +293,11 @@ class TestReplayRouter:
         summaries_result = MagicMock()
         summaries_result.scalars.return_value.all.return_value = []
 
-        app, _ = _make_app([session_result, events_result, drivers_result, summaries_result])
+        # Mock empty digest
+        digest_result = MagicMock()
+        digest_result.scalar_one_or_none.return_value = None
+
+        app, _ = _make_app([session_result, events_result, drivers_result, summaries_result, digest_result])
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/sessions/9999/replay")
 
@@ -299,3 +314,4 @@ class TestReplayRouter:
         assert data["events"]["laps"] == []
         assert data["drivers"] == {}
         assert data["summaries"] == []
+        assert data["digest"] is None
