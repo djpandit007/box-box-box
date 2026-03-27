@@ -164,8 +164,8 @@ class PitResponse(BaseModel):
     lap_number: int
     driver_number: int
     stop_duration: float | None = None
-    lane_duration: float
-    pit_duration: float
+    lane_duration: float | None = None
+    pit_duration: float | None = None
     meeting_key: int
 
     @field_validator("date")
