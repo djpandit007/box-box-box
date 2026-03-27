@@ -4,8 +4,10 @@ import pathlib
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 
+from boxboxbox.config import settings
 from boxboxbox.delivery.routers import replay, sessions, summaries, standings
 from boxboxbox.delivery.ws import ConnectionManager
 
@@ -44,6 +46,11 @@ def create_app(
     app.include_router(summaries.router)
     app.include_router(standings.router)
     app.include_router(replay.router)
+
+    # Serve audio files
+    audio_dir = pathlib.Path(settings.AUDIO_DIR)
+    if audio_dir.is_dir():
+        app.mount("/audio", StaticFiles(directory=str(audio_dir)), name="audio")
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:

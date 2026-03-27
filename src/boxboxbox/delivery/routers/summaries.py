@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pathlib
 from datetime import datetime
 
 from fastapi import APIRouter, Request
@@ -11,6 +12,13 @@ from boxboxbox.models import Summary, SummaryType
 router = APIRouter()
 
 
+def _audio_url(path: str | None) -> str | None:
+    """Convert a file-system audio path to a URL path."""
+    if not path:
+        return None
+    return "/audio/" + pathlib.PurePosixPath(path).name
+
+
 def _summary_dict(s: Summary) -> dict:
     return {
         "id": s.id,
@@ -19,7 +27,7 @@ def _summary_dict(s: Summary) -> dict:
         "window_start": s.window_start.isoformat(),
         "window_end": s.window_end.isoformat(),
         "summary_text": s.summary_text,
-        "audio_url": s.audio_url,
+        "audio_url": _audio_url(s.audio_url),
     }
 
 

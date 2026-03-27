@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import pathlib
+
 from fastapi import APIRouter, Request
 from sqlalchemy import select
 
 from boxboxbox.models import Driver, RaceEvent, Session, Summary, SummaryType
 
 router = APIRouter()
+
+
+def _audio_url(path: str | None) -> str | None:
+    """Convert a file-system audio path to a URL path."""
+    if not path:
+        return None
+    return "/audio/" + pathlib.PurePosixPath(path).name
 
 
 @router.get("/api/sessions/{session_key}/replay")
@@ -97,7 +106,7 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
                 "window_start": s.window_start.isoformat(),
                 "window_end": s.window_end.isoformat(),
                 "summary_text": s.summary_text,
-                "audio_url": s.audio_url,
+                "audio_url": _audio_url(s.audio_url),
             }
             for s in summaries_result.scalars().all()
         ]
@@ -110,7 +119,11 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
             .limit(1)
         )
         digest_row = digest_result.scalar_one_or_none()
-        digest = {"summary_text": digest_row.summary_text, "audio_url": digest_row.audio_url} if digest_row else None
+        digest = (
+            {"summary_text": digest_row.summary_text, "audio_url": _audio_url(digest_row.audio_url)}
+            if digest_row
+            else None
+        )
 
     return {
         "session_name": session.session_name if session else None,
