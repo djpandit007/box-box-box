@@ -24,6 +24,8 @@ def create_app(
     is_live: bool = True,
     session_name: str = "",
     session_type: str = "",
+    country_name: str = "",
+    circuit_short_name: str = "",
 ) -> FastAPI:
     app = FastAPI(title="box-box-box")
 
@@ -34,6 +36,8 @@ def create_app(
     app.state.is_live = is_live
     app.state.session_name = session_name
     app.state.session_type = session_type
+    app.state.country_name = country_name
+    app.state.circuit_short_name = circuit_short_name
     app.state.jinja_env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), keep_trailing_newline=True)
 
     app.include_router(sessions.router)
@@ -50,6 +54,8 @@ def create_app(
                 is_live=request.app.state.is_live,
                 session_name=request.app.state.session_name,
                 session_type=request.app.state.session_type,
+                country_name=request.app.state.country_name,
+                circuit_short_name=request.app.state.circuit_short_name,
             )
         )
 

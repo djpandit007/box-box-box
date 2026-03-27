@@ -217,12 +217,23 @@ class TestReplayRouter:
             ),
         ]
 
+        # Mock drivers query
+        driver1 = MagicMock()
+        driver1.driver_number = 1
+        driver1.name_acronym = "VER"
+        driver1.full_name = "Max Verstappen"
+        driver1.team_name = "Red Bull"
+        driver1.team_colour = "3671C6"
+        driver1.headshot_url = "https://example.com/ver.png"
+        drivers_result = MagicMock()
+        drivers_result.scalars.return_value.all.return_value = [driver1]
+
         # Mock summaries query
         summary_obj = _make_summary_obj()
         summaries_result = MagicMock()
         summaries_result.scalars.return_value.all.return_value = [summary_obj]
 
-        app, _ = _make_app([session_result, events_result, summaries_result])
+        app, _ = _make_app([session_result, events_result, drivers_result, summaries_result])
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/sessions/1234/replay")
 
@@ -241,6 +252,11 @@ class TestReplayRouter:
         assert len(data["events"]["weather"]) == 1
         assert data["events"]["weather"][0]["rainfall"] == 0
         assert data["events"]["weather"][0]["air_temp"] == 22
+        # Driver metadata
+        assert "1" in data["drivers"]
+        assert data["drivers"]["1"]["name_acronym"] == "VER"
+        assert data["drivers"]["1"]["team_name"] == "Red Bull"
+        assert data["drivers"]["1"]["headshot_url"] == "https://example.com/ver.png"
         assert len(data["summaries"]) == 1
         assert data["summaries"][0]["summary_text"] == "Hamilton leads."
 
@@ -254,11 +270,15 @@ class TestReplayRouter:
         events_result = MagicMock()
         events_result.all.return_value = []
 
+        # Mock empty drivers
+        drivers_result = MagicMock()
+        drivers_result.scalars.return_value.all.return_value = []
+
         # Mock empty summaries
         summaries_result = MagicMock()
         summaries_result.scalars.return_value.all.return_value = []
 
-        app, _ = _make_app([session_result, events_result, summaries_result])
+        app, _ = _make_app([session_result, events_result, drivers_result, summaries_result])
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/sessions/9999/replay")
 
@@ -272,4 +292,5 @@ class TestReplayRouter:
         assert data["events"]["position"] == []
         assert data["events"]["intervals"] == []
         assert data["events"]["weather"] == []
+        assert data["drivers"] == {}
         assert data["summaries"] == []

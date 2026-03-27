@@ -136,6 +136,8 @@ async def async_main() -> None:
         is_live=is_live,
         session_name=poller.session_info.session_name,
         session_type=poller.session_info.session_type,
+        country_name=poller.session_info.country_name,
+        circuit_short_name=poller.session_info.circuit_short_name,
     )
     web_config = uvicorn.Config(app, host=WEB_HOST, port=WEB_PORT, log_level="warning")
     web_task = asyncio.create_task(uvicorn.Server(web_config).serve())

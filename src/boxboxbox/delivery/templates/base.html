@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>box-box-box &mdash; {{ session_name }} &mdash; {% if is_live %}Live{% else %}Replay{% endif %}</title>
+  <title>box-box-box &mdash; {{ session_name }} {{ country_name }}/{{ circuit_short_name }} &mdash; {% if is_live %}Live{% else %}Replay{% endif %}</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 1rem; }
     .layout { display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem; }
@@ -28,7 +28,7 @@
 </head>
 <body>
   <h1>box-box-box</h1>
-  {% if session_name %}<p class="session-title">{{ session_name }} &mdash; {{ session_type }}</p>{% endif %}
+  {% if session_name %}<p class="session-title">{{ session_name }} &mdash; {{ country_name }}/{{ circuit_short_name }}</p>{% endif %}
 
   <div id="alerts"></div>
 
@@ -87,6 +87,30 @@
   {% if is_live %}
   <!-- WebSocket connection (live mode only) -->
   <script>
+    // Fetch driver metadata once for the leaderboard
+    (async function() {
+      const waitForPyodide = () => new Promise(resolve => {
+        const check = () => window._pyodideReady ? resolve() : setTimeout(check, 100);
+        check();
+      });
+      try {
+        const resp = await fetch("/api/sessions/{{ session_key }}/standings");
+        const standings = await resp.json();
+        const drivers = {};
+        for (const row of standings) {
+          drivers[row.driver_number] = {
+            name_acronym: row.name_acronym || "",
+            full_name: row.full_name || "",
+            team_name: row.team_name || "",
+            team_colour: row.team_colour || "ccc",
+            headshot_url: null,
+          };
+        }
+        await waitForPyodide();
+        window._setDrivers(drivers);
+      } catch (e) { console.error("Failed to load driver info:", e); }
+    })();
+
     const wsUrl = "ws://" + window.location.host + "/ws";
     const socket = new WebSocket(wsUrl);
 
@@ -121,6 +145,11 @@ BATTLE_THRESHOLD = 1.5
 STABLE_TOLERANCE = 0.1
 
 prev_snapshot = None
+_driver_info = {}
+
+def set_drivers(drivers_dict):
+    global _driver_info
+    _driver_info = drivers_dict
 
 def reset_state():
     global prev_snapshot
@@ -182,12 +211,19 @@ def build_leaderboard(snapshot):
     for driver_number in sorted_drivers:
         pos = positions[driver_number]
         interval = intervals.get(driver_number)
+        info = _driver_info.get(driver_number, _driver_info.get(str(driver_number), {}))
+        name = info.get("name_acronym", "")
+        team = info.get("team_name", "")
+        colour = info.get("team_colour", "ccc")
+        headshot = info.get("headshot_url", "") or ""
+        img_html = f"<img src='{headshot}' width='24' height='24' style='border-radius:50%;vertical-align:middle;margin-right:4px'>" if headshot else ""
+        team_dot = f"<span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#{colour};margin-right:6px;vertical-align:middle'></span>"
         tr = document.createElement("tr")
         tr.setAttribute("data-driver", str(driver_number))
         tr.innerHTML = (
             f"<td>{pos}</td>"
-            f"<td>#{driver_number}</td>"
-            f"<td></td>"
+            f"<td>{img_html}{name} <span style='color:#999;font-size:.8em'>#{driver_number}</span></td>"
+            f"<td>{team_dot}{team}</td>"
             f"<td class='interval'>{f'{interval:.3f}' if interval is not None else ''}</td>"
             f"<td class='trend trend-stable'>&ndash;</td>"
         )
@@ -198,8 +234,8 @@ def process_snapshot(snapshot):
     positions = {p["driver_number"]: p["position"] for p in snapshot["positions"]}
     intervals = {i["driver_number"]: i["interval"] for i in snapshot["intervals"]}
 
-    # Initial leaderboard build or rebuild on first snapshot
-    if prev_snapshot is None:
+    # Rebuild leaderboard on every snapshot (positions may have changed)
+    if positions:
         build_leaderboard(snapshot)
 
     # Gap deltas
@@ -239,6 +275,10 @@ def process_snapshot(snapshot):
       window._resetState = function() {
         pyodide.runPython("reset_state()");
       };
+      window._setDrivers = function(driversObj) {
+        pyodide.globals.set("_drivers_js", driversObj);
+        pyodide.runPython("set_drivers(_drivers_js.to_py())");
+      };
       window._pyodideReady = true;
     }
 
@@ -273,8 +313,11 @@ def process_snapshot(snapshot):
           this.allSummaries = this.replayData.summaries;
           this.buildTicks();
           this.loaded = true;
-          // Wait for Pyodide to be ready, then show initial state
+          // Wait for Pyodide to be ready, then set driver info and show initial state
           await this.waitForPyodide();
+          if (this.replayData.drivers) {
+            window._setDrivers(this.replayData.drivers);
+          }
           this.applySnapshot();
         },
 
@@ -287,6 +330,9 @@ def process_snapshot(snapshot):
 
         buildTicks() {
           const tsSet = new Set();
+          // Session boundaries anchor the slider endpoints
+          if (this.replayData.session_start) tsSet.add(this.replayData.session_start);
+          if (this.replayData.session_end) tsSet.add(this.replayData.session_end);
           const events = this.replayData.events;
           for (const source of ["position", "intervals", "weather"]) {
             for (const evt of events[source]) {
@@ -386,7 +432,7 @@ def process_snapshot(snapshot):
         get visibleSummaries() {
           if (!this.ticks.length) return [];
           const ts = this.ticks[this.currentTick];
-          return this.allSummaries.filter(s => s.window_end <= ts);
+          return this.allSummaries.filter(s => s.window_end <= ts).reverse();
         }
       };
     }

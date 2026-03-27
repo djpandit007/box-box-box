@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from sqlalchemy import select
 
-from boxboxbox.models import RaceEvent, Session, Summary, SummaryType
+from boxboxbox.models import Driver, RaceEvent, Session, Summary, SummaryType
 
 router = APIRouter()
 
@@ -60,6 +60,19 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
                     }
                 )
 
+        # Driver metadata
+        drivers_result = await db.execute(select(Driver).where(Driver.session_key == session_key))
+        drivers = {
+            d.driver_number: {
+                "name_acronym": d.name_acronym,
+                "full_name": d.full_name,
+                "team_name": d.team_name,
+                "team_colour": d.team_colour,
+                "headshot_url": d.headshot_url,
+            }
+            for d in drivers_result.scalars().all()
+        }
+
         # All window summaries
         summaries_result = await db.execute(
             select(Summary)
@@ -90,5 +103,6 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
             "intervals": interval_events,
             "weather": weather_events,
         },
+        "drivers": drivers,
         "summaries": summaries,
     }
