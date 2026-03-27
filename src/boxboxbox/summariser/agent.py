@@ -94,8 +94,9 @@ The session_type and optional final_standings in the prompt tell you what kind o
 - **Practice**: focus on lap-time improvements and who set the benchmark lap. Drop the winner
   sign-off; replace the second-to-last and final lines with reflections on tyre performance and
   what the times suggest for race pace.
-- **Qualifying**: focus on who took pole, key elimination moments, and grid order. Replace the
-  final classification with the grid order; end with naming the pole-sitter.
+- **Qualifying**: focus on who took pole, key elimination moments, and grid order. When
+  final_standings are provided, use them as the authoritative qualifying order. End naming the
+  pole-sitter.
 """
 
 

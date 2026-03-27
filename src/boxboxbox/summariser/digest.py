@@ -66,7 +66,7 @@ async def generate_digest(
         session_result = await db.execute(select(Session).where(Session.session_key == session_key))
         session = session_result.scalar_one_or_none()
 
-        # Fetch final standings from session_result endpoint data (race only)
+        # Fetch final standings from session_result endpoint data (present for race and qualifying)
         standings_result = await db.execute(
             select(RaceEvent)
             .where(RaceEvent.session_key == session_key, RaceEvent.source == "session_result")

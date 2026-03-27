@@ -31,10 +31,11 @@ def _make_summary(window_start: str, window_end: str, text: str) -> Summary:
     return s
 
 
-def _make_session(name: str = "Race", circuit: str = "Monza") -> Session:
+def _make_session(name: str = "Race", circuit: str = "Monza", session_type: str = "Race") -> Session:
     s = MagicMock(spec=Session)
     s.session_name = name
     s.circuit_short_name = circuit
+    s.session_type = session_type
     return s
 
 
@@ -97,8 +98,11 @@ class TestGenerateDigest:
         session_result = MagicMock()
         session_result.scalar_one_or_none.return_value = session_obj
 
+        standings_result = MagicMock()
+        standings_result.scalars.return_value.all.return_value = []
+
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[no_existing_digest, summaries_result, session_result])
+        db.execute = AsyncMock(side_effect=[no_existing_digest, summaries_result, session_result, standings_result])
         db.add = MagicMock()
         db.commit = AsyncMock()
 
