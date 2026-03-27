@@ -146,6 +146,8 @@ class Poller:
         async with self._session_factory() as db:
             if endpoint.name == "team_radio":
                 await self._store_radio(db, records)
+            elif endpoint.name == "session_result":
+                await self._store_session_result(db, records)
             else:
                 await self._store_events(db, endpoint.name, records)
             await db.commit()
@@ -186,6 +188,30 @@ class Poller:
                 driver_number=r.get("driver_number"),
                 lap_number=r.get("lap_number"),
                 event_date=event_date,
+                data=r,
+                data_hash=data_hash,
+            )
+            stmt = stmt.on_conflict_do_nothing(
+                index_elements=[
+                    "session_key",
+                    "source",
+                    "event_date",
+                    text("COALESCE(driver_number, 0)"),
+                    "data_hash",
+                ]
+            )
+            await db.execute(stmt)
+
+    async def _store_session_result(self, db, records: list[dict]) -> None:
+        session_date = self.session_info.date_start
+        for r in records:
+            data_hash = OpenF1Client.hash_event(r)
+            stmt = pg_insert(RaceEvent).values(
+                session_key=self._session_key,
+                source="session_result",
+                driver_number=r.get("driver_number"),
+                lap_number=None,
+                event_date=session_date,
                 data=r,
                 data_hash=data_hash,
             )

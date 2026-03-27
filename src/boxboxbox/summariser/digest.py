@@ -11,7 +11,7 @@ from sqlalchemy import select, text
 from boxboxbox.audio.tts import generate_audio
 from boxboxbox.config import settings
 from boxboxbox.db import SessionFactory
-from boxboxbox.models import RaceEvent, Session, Summary, SummaryType
+from boxboxbox.models import Driver, RaceEvent, Session, Summary, SummaryType
 from boxboxbox.summariser.embeddings import EmbeddingClient
 
 logger = logging.getLogger(__name__)
@@ -71,9 +71,27 @@ async def generate_digest(
         standings_result = await db.execute(
             select(RaceEvent)
             .where(RaceEvent.session_key == session_key, RaceEvent.source == "session_result")
-            .order_by(text("(data->>'position')::int"))
+            .order_by(text("(data->>'position')::int NULLS LAST"))
         )
-        final_standings = [row.data for row in standings_result.scalars().all()]
+        driver_rows = await db.execute(select(Driver).where(Driver.session_key == session_key))
+        driver_map = {d.driver_number: d for d in driver_rows.scalars().all()}
+
+        final_standings = []
+        for row in standings_result.scalars().all():
+            d = row.data
+            driver_number = d.get("driver_number")
+            driver = driver_map.get(driver_number) if driver_number is not None else None
+            name = f"{driver.full_name} ({driver.name_acronym})" if driver else f"#{driver_number}"
+            final_standings.append(
+                {
+                    "position": d.get("position"),
+                    "driver": name,
+                    "gap_to_leader": d.get("gap_to_leader"),
+                    "dnf": d.get("dnf", False),
+                    "dns": d.get("dns", False),
+                    "dsq": d.get("dsq", False),
+                }
+            )
 
         digest_prompt = _build_digest_prompt(summaries, session, final_standings)
 

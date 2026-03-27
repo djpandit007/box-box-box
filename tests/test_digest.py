@@ -101,8 +101,13 @@ class TestGenerateDigest:
         standings_result = MagicMock()
         standings_result.scalars.return_value.all.return_value = []
 
+        driver_result = MagicMock()
+        driver_result.scalars.return_value.all.return_value = []
+
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[no_existing_digest, summaries_result, session_result, standings_result])
+        db.execute = AsyncMock(
+            side_effect=[no_existing_digest, summaries_result, session_result, standings_result, driver_result]
+        )
         db.add = MagicMock()
         db.commit = AsyncMock()
 

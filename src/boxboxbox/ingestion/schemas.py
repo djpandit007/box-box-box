@@ -231,18 +231,17 @@ class TeamRadioResponse(BaseModel):
 class SessionResultResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    date: datetime
     session_key: int
     meeting_key: int
     driver_number: int
-    position: int
-
-    @field_validator("date")
-    @classmethod
-    def _normalize_dt(cls, v: datetime) -> datetime:
-        if v.tzinfo is not None:
-            v = v.astimezone(timezone.utc).replace(tzinfo=None)
-        return v
+    position: int | None = None
+    number_of_laps: int | None = None
+    points: int | None = None
+    dnf: bool = False
+    dns: bool = False
+    dsq: bool = False
+    duration: float | None = None
+    gap_to_leader: float | str | None = None
 
 
 ENDPOINT_MODELS: dict[str, type[BaseModel]] = {
