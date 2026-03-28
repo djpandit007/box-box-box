@@ -84,7 +84,7 @@ async def generate_digest(
             d = row.data
             driver_number = d.get("driver_number")
             driver = driver_map.get(driver_number) if driver_number is not None else None
-            name = f"{driver.full_name} ({driver.name_acronym})" if driver else f"#{driver_number}"
+            name = f"{driver.full_name} ({driver.name_acronym}, {driver.team_name})" if driver else f"#{driver_number}"
             final_standings.append(
                 {
                     "position": d.get("position"),

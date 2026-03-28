@@ -34,7 +34,7 @@ DRIVER_MAP = {
 
 class TestDriverName:
     def test_known_driver(self):
-        assert _driver_name(DRIVER_MAP, 44) == "Lewis HAMILTON (HAM)"
+        assert _driver_name(DRIVER_MAP, 44) == "Lewis HAMILTON (HAM, Ferrari)"
 
     def test_unknown_driver(self):
         assert _driver_name(DRIVER_MAP, 999) == "#999"
@@ -98,7 +98,7 @@ class TestBuildTemplateContext:
         ctx = _build_template_context(
             events, DRIVER_MAP, None, datetime(2026, 3, 15, 6, 20), datetime(2026, 3, 15, 6, 21)
         )
-        assert ctx["race_control"][0]["driver"] == "Lewis HAMILTON (HAM)"
+        assert ctx["race_control"][0]["driver"] == "Lewis HAMILTON (HAM, Ferrari)"
 
     def test_overtakes_both_drivers_resolved(self):
         events = {
@@ -114,8 +114,8 @@ class TestBuildTemplateContext:
         ctx = _build_template_context(
             events, DRIVER_MAP, None, datetime(2026, 3, 15, 7, 4), datetime(2026, 3, 15, 7, 5)
         )
-        assert ctx["overtakes"][0]["overtaking_driver"] == "Lewis HAMILTON (HAM)"
-        assert ctx["overtakes"][0]["overtaken_driver"] == "George RUSSELL (RUS)"
+        assert ctx["overtakes"][0]["overtaking_driver"] == "Lewis HAMILTON (HAM, Ferrari)"
+        assert ctx["overtakes"][0]["overtaken_driver"] == "George RUSSELL (RUS, Mercedes)"
 
     def test_pit_stops(self):
         events = {
@@ -132,7 +132,7 @@ class TestBuildTemplateContext:
         ctx = _build_template_context(
             events, DRIVER_MAP, None, datetime(2026, 3, 15, 7, 6), datetime(2026, 3, 15, 7, 7)
         )
-        assert ctx["pit_stops"][0]["driver"] == "Nico HULKENBERG (HUL)"
+        assert ctx["pit_stops"][0]["driver"] == "Nico HULKENBERG (HUL, Sauber)"
         assert ctx["pit_stops"][0]["stop_duration"] == 2.7
 
     def test_position_snapshot_deduplication(self):
@@ -153,9 +153,9 @@ class TestBuildTemplateContext:
         # Should have 3 drivers (deduplicated), with latest positions
         assert len(standings) == 3
         assert standings[0]["position"] == 1
-        assert standings[0]["driver"] == "Andrea Kimi ANTONELLI (ANT)"
+        assert standings[0]["driver"] == "Andrea Kimi ANTONELLI (ANT, Mercedes)"
         assert standings[1]["position"] == 2
-        assert standings[1]["driver"] == "Lewis HAMILTON (HAM)"
+        assert standings[1]["driver"] == "Lewis HAMILTON (HAM, Ferrari)"
 
     def test_intervals_with_lapped_car(self):
         events = {
@@ -232,7 +232,7 @@ class TestBuildTemplateContext:
             events, DRIVER_MAP, None, datetime(2026, 3, 15, 6, 0), datetime(2026, 3, 15, 6, 5)
         )
         assert ctx["stints"][0]["compound"] == "SOFT"
-        assert ctx["stints"][0]["driver"] == "Nico HULKENBERG (HUL)"
+        assert ctx["stints"][0]["driver"] == "Nico HULKENBERG (HUL, Sauber)"
 
     def test_previous_summary_included(self):
         ctx = _build_template_context(
@@ -325,10 +325,10 @@ class TestNonRaceStandings:
         )
         assert "standings" in ctx
         assert "positions" not in ctx
-        assert ctx["standings"][0]["driver"] == "George RUSSELL (RUS)"
+        assert ctx["standings"][0]["driver"] == "George RUSSELL (RUS, Mercedes)"
         assert ctx["standings"][0]["best_lap"] == 79.8
         assert ctx["standings"][0]["gap"] == 0.0
-        assert ctx["standings"][1]["driver"] == "Lewis HAMILTON (HAM)"
+        assert ctx["standings"][1]["driver"] == "Lewis HAMILTON (HAM, Ferrari)"
         assert ctx["standings"][1]["gap"] == pytest.approx(0.7)
 
     def test_qualifying_standings_no_q_times(self):
@@ -454,7 +454,7 @@ class TestQualifyingPhaseResults:
         assert "q1" in elim
         assert "q2" not in elim
         assert len(elim["q1"]) == 1
-        assert elim["q1"][0]["driver"] == "Nico HULKENBERG (HUL)"
+        assert elim["q1"][0]["driver"] == "Nico HULKENBERG (HUL, Sauber)"
         assert elim["q1"][0]["q1_time"] == 91.5
 
     def test_q2_end_shows_only_q2_eliminated(self):
@@ -478,7 +478,7 @@ class TestQualifyingPhaseResults:
         assert "q2" in elim
         assert "q1" not in elim
         assert len(elim["q2"]) == 1
-        assert elim["q2"][0]["driver"] == "George RUSSELL (RUS)"
+        assert elim["q2"][0]["driver"] == "George RUSSELL (RUS, Mercedes)"
 
     def test_q3_end_shows_top10(self):
         events = {
@@ -501,7 +501,7 @@ class TestQualifyingPhaseResults:
         assert "qualifying_top10" in ctx
         top10 = ctx["qualifying_top10"]
         assert top10[0]["position"] == 1
-        assert top10[0]["driver"] == "Lewis HAMILTON (HAM)"
+        assert top10[0]["driver"] == "Lewis HAMILTON (HAM, Ferrari)"
         assert top10[0]["q3_time"] == 87.8
         assert top10[1]["position"] == 2
 
@@ -527,8 +527,8 @@ class TestQualifyingPhaseResults:
             session_results=session_results,
         )
         q1 = ctx["qualifying_eliminations"]["q1"]
-        assert q1[0]["driver"] == "Nico HULKENBERG (HUL)"  # P16
-        assert q1[1]["driver"] == "George RUSSELL (RUS)"  # P17
+        assert q1[0]["driver"] == "Nico HULKENBERG (HUL, Sauber)"  # P16
+        assert q1[1]["driver"] == "George RUSSELL (RUS, Mercedes)"  # P17
 
     def test_no_eliminations_without_session_finished(self):
         events = {

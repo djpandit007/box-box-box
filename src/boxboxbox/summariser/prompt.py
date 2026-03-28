@@ -181,12 +181,12 @@ async def _fetch_session_results(db: AsyncSession, session_key: int) -> dict[int
 
 
 def _driver_name(driver_map: dict[int, Driver], driver_number: int | None) -> str | None:
-    """Resolve a driver number to 'Full Name (ACR)' format."""
+    """Resolve a driver number to 'Full Name (ACR, Team)' format."""
     if driver_number is None:
         return None
     driver = driver_map.get(driver_number)
     if driver:
-        return f"{driver.full_name} ({driver.name_acronym})"
+        return f"{driver.full_name} ({driver.name_acronym}, {driver.team_name})"
     return f"#{driver_number}"
 
 
