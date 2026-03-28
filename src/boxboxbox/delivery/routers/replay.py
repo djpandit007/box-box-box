@@ -29,9 +29,9 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
 
         # All event sources — intervals and starting_grid only exist for race/sprint
         non_race = is_non_race_session(session.session_type) if session else False
-        sources = ["position", "weather", "laps"]
+        sources = ["weather", "laps"]
         if not non_race:
-            sources += ["intervals", "starting_grid"]
+            sources += ["position", "intervals", "starting_grid"]
 
         events_result = await db.execute(
             select(RaceEvent.source, RaceEvent.driver_number, RaceEvent.event_date, RaceEvent.data)
