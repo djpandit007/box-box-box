@@ -239,8 +239,8 @@ class SessionResultResponse(BaseModel):
     dnf: bool = False
     dns: bool = False
     dsq: bool = False
-    duration: float | list[float] | None = None
-    gap_to_leader: float | str | list[float] | None = None
+    duration: float | list[float | None] | None = None
+    gap_to_leader: float | str | list[float | None] | None = None
 
 
 class StartingGridResponse(BaseModel):

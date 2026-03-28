@@ -43,6 +43,21 @@ class TestSessionResultQualifying:
         assert result.duration == [90.035, 89.048, 88.778]
         assert result.gap_to_leader == [0.12, 0.0, 0.0]
 
+    def test_qualifying_eliminated_driver_has_none_entries(self):
+        from boxboxbox.ingestion.schemas import SessionResultResponse
+
+        data = {
+            "session_key": 11245,
+            "meeting_key": 1280,
+            "driver_number": 18,
+            "position": 16,
+            "duration": [90.519, 90.262, None],
+            "gap_to_leader": [0.604, 1.214, None],
+        }
+        result = SessionResultResponse.model_validate(data)
+        assert result.duration == [90.519, 90.262, None]
+        assert result.gap_to_leader == [0.604, 1.214, None]
+
     def test_race_scalar_duration_and_gap(self):
         from boxboxbox.ingestion.schemas import SessionResultResponse
 
