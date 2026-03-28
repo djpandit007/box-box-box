@@ -255,9 +255,10 @@ class TestReplayRouter:
         session_result = MagicMock()
         session_result.scalar_one_or_none.return_value = session_obj
 
-        # Mock events query — two position events and one weather event
+        # Mock events query — position, intervals, weather, laps, starting_grid
         events_result = MagicMock()
         events_result.all.return_value = [
+            ("starting_grid", 1, datetime(2026, 9, 7, 12, 0, 0), {"position": 1}),
             ("position", 1, datetime(2026, 9, 7, 13, 0, 10), {"position": 1}),
             ("intervals", 33, datetime(2026, 9, 7, 13, 0, 10), {"interval": 0.8}),
             (
@@ -314,6 +315,8 @@ class TestReplayRouter:
         assert len(data["events"]["laps"]) == 1
         assert data["events"]["laps"][0]["lap_duration"] == 92.5
         assert data["events"]["laps"][0]["lap_number"] == 3
+        assert len(data["events"]["starting_grid"]) == 1
+        assert data["events"]["starting_grid"][0]["position"] == 1
         # Driver metadata
         assert "1" in data["drivers"]
         assert data["drivers"]["1"]["name_acronym"] == "VER"
@@ -363,6 +366,7 @@ class TestReplayRouter:
         assert data["events"]["intervals"] == []
         assert data["events"]["weather"] == []
         assert data["events"]["laps"] == []
+        assert data["events"]["starting_grid"] == []
         assert data["drivers"] == {}
         assert data["summaries"] == []
         assert data["digest"] is None

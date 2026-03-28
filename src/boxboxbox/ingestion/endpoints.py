@@ -32,10 +32,10 @@ ENDPOINTS: tuple[EndpointConfig, ...] = (
     EndpointConfig("pit", "/pit", Priority.P1),
     EndpointConfig("overtakes", "/overtakes", Priority.P1),
     # P2 — important, every 30s
-    EndpointConfig("position", "/position", Priority.P2),
     EndpointConfig("intervals", "/intervals", Priority.P2),
-    EndpointConfig("laps", "/laps", Priority.P2, date_field="date_start"),
     # P3 — background, every 60s
+    EndpointConfig("position", "/position", Priority.P3),
+    EndpointConfig("laps", "/laps", Priority.P3, date_field="date_start"),
     EndpointConfig("weather", "/weather", Priority.P3),
     EndpointConfig("stints", "/stints", Priority.P3, date_field=""),  # no date field; re-fetch entirely
     EndpointConfig("team_radio", "/team_radio", Priority.P3),

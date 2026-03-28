@@ -27,9 +27,11 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
         session_start = session.date_start.isoformat() if session else None
         session_end = session.date_end.isoformat() if session and session.date_end else None
 
-        # Event sources depend on session type
+        # All event sources — intervals and starting_grid only exist for race/sprint
         non_race = is_non_race_session(session.session_type) if session else False
-        sources = ["weather", "laps"] if non_race else ["position", "intervals", "weather", "laps"]
+        sources = ["position", "weather", "laps"]
+        if not non_race:
+            sources += ["intervals", "starting_grid"]
 
         events_result = await db.execute(
             select(RaceEvent.source, RaceEvent.driver_number, RaceEvent.event_date, RaceEvent.data)
@@ -45,6 +47,7 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
         interval_events = []
         weather_events = []
         lap_events = []
+        starting_grid_events = []
 
         for source, driver_number, event_date, data in rows:
             ts = event_date.isoformat()
@@ -80,6 +83,13 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
                         "event_date": ts,
                         "lap_duration": data.get("lap_duration"),
                         "lap_number": data.get("lap_number"),
+                    }
+                )
+            elif source == "starting_grid":
+                starting_grid_events.append(
+                    {
+                        "driver_number": driver_number,
+                        "position": data.get("position"),
                     }
                 )
 
@@ -140,6 +150,7 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
             "intervals": interval_events,
             "weather": weather_events,
             "laps": lap_events,
+            "starting_grid": starting_grid_events,
         },
         "drivers": drivers,
         "summaries": summaries,

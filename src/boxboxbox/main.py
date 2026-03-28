@@ -46,48 +46,38 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
     while True:
         try:
             async with session_factory() as db:
-                if non_race:
-                    # Practice/qualifying: derive standings from best lap times
-                    laps_result = await db.execute(
+                # Latest position per driver (all session types)
+                pos_subq = (
+                    select(RaceEvent.driver_number, func.max(RaceEvent.event_date).label("max_date"))
+                    .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
+                    .group_by(RaceEvent.driver_number)
+                    .subquery()
+                )
+                pos_result = await db.execute(
+                    select(RaceEvent.driver_number, RaceEvent.data)
+                    .join(
+                        pos_subq,
+                        (RaceEvent.driver_number == pos_subq.c.driver_number)
+                        & (RaceEvent.event_date == pos_subq.c.max_date),
+                    )
+                    .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
+                )
+                positions = [{"driver_number": row[0], "position": row[1].get("position")} for row in pos_result.all()]
+
+                # Race with no positions yet: fall back to starting grid
+                if not positions and not non_race:
+                    grid_result = await db.execute(
                         select(RaceEvent.driver_number, RaceEvent.data).where(
-                            RaceEvent.session_key == session_key, RaceEvent.source == "laps"
+                            RaceEvent.session_key == session_key, RaceEvent.source == "starting_grid"
                         )
-                    )
-                    best_laps: dict[int, dict] = {}
-                    for driver_number, data in laps_result.all():
-                        dur = data.get("lap_duration")
-                        if dur is None:
-                            continue
-                        existing = best_laps.get(driver_number)
-                        if existing is None or dur < existing["lap_duration"]:
-                            best_laps[driver_number] = {
-                                "lap_duration": dur,
-                                "lap_number": data.get("lap_number"),
-                            }
-                    sorted_drivers = sorted(best_laps, key=lambda d: best_laps[d]["lap_duration"])
-                    positions = [{"driver_number": d, "position": idx + 1} for idx, d in enumerate(sorted_drivers)]
-                    intervals: list[dict] = []
-                else:
-                    # Race: use position and interval events directly
-                    pos_subq = (
-                        select(RaceEvent.driver_number, func.max(RaceEvent.event_date).label("max_date"))
-                        .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
-                        .group_by(RaceEvent.driver_number)
-                        .subquery()
-                    )
-                    pos_result = await db.execute(
-                        select(RaceEvent.driver_number, RaceEvent.data)
-                        .join(
-                            pos_subq,
-                            (RaceEvent.driver_number == pos_subq.c.driver_number)
-                            & (RaceEvent.event_date == pos_subq.c.max_date),
-                        )
-                        .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
                     )
                     positions = [
-                        {"driver_number": row[0], "position": row[1].get("position")} for row in pos_result.all()
+                        {"driver_number": row[0], "position": row[1].get("position")} for row in grid_result.all()
                     ]
 
+                # Intervals — only available for race/sprint
+                intervals: list[dict] = []
+                if not non_race:
                     int_subq = (
                         select(RaceEvent.driver_number, func.max(RaceEvent.event_date).label("max_date"))
                         .where(RaceEvent.session_key == session_key, RaceEvent.source == "intervals")
@@ -106,6 +96,25 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
                     intervals = [
                         {"driver_number": row[0], "interval": row[1].get("interval")} for row in int_result.all()
                     ]
+
+                # Best laps — sent for practice/qualifying (frontend sorts by this)
+                best_laps: dict[int, dict] = {}
+                if non_race:
+                    laps_result = await db.execute(
+                        select(RaceEvent.driver_number, RaceEvent.data).where(
+                            RaceEvent.session_key == session_key, RaceEvent.source == "laps"
+                        )
+                    )
+                    for driver_number, data in laps_result.all():
+                        dur = data.get("lap_duration")
+                        if dur is None:
+                            continue
+                        existing = best_laps.get(driver_number)
+                        if existing is None or dur < existing["lap_duration"]:
+                            best_laps[driver_number] = {
+                                "lap_duration": dur,
+                                "lap_number": data.get("lap_number"),
+                            }
 
                 # Latest weather reading
                 weather_result = await db.execute(
@@ -127,7 +136,7 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
 
             if positions:
                 payload: dict = {"positions": positions, "intervals": intervals, "weather": weather}
-                if non_race:
+                if non_race and best_laps:
                     payload["best_laps"] = {str(k): v for k, v in best_laps.items()}
                 await manager.broadcast_json(payload)
         except asyncio.CancelledError:

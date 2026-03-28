@@ -522,7 +522,38 @@ def process_snapshot(snapshot):
           const st = this.replayData.session_type || "";
           const isNonRace = st !== "Race" && st !== "Sprint";
 
-          // Best lap per driver up to timestamp (used for practice/qualifying leaderboard + positions)
+          // Latest position per driver at or before timestamp (all session types)
+          const positions = [];
+          const posSeen = new Set();
+          for (let i = events.position.length - 1; i >= 0; i--) {
+            const evt = events.position[i];
+            if (evt.event_date <= timestamp && !posSeen.has(evt.driver_number)) {
+              posSeen.add(evt.driver_number);
+              positions.push({ driver_number: evt.driver_number, position: evt.position });
+            }
+          }
+
+          // Race with no positions yet: fall back to starting grid
+          if (!positions.length && !isNonRace && events.starting_grid) {
+            for (const g of events.starting_grid) {
+              positions.push({ driver_number: g.driver_number, position: g.position });
+            }
+          }
+
+          // Intervals — only available for race/sprint
+          const intervals = [];
+          if (!isNonRace && events.intervals) {
+            const intSeen = new Set();
+            for (let i = events.intervals.length - 1; i >= 0; i--) {
+              const evt = events.intervals[i];
+              if (evt.event_date <= timestamp && !intSeen.has(evt.driver_number)) {
+                intSeen.add(evt.driver_number);
+                intervals.push({ driver_number: evt.driver_number, interval: evt.interval });
+              }
+            }
+          }
+
+          // Best lap per driver up to timestamp (practice/qualifying leaderboard sorting)
           const bestLaps = {};
           if (events.laps && isNonRace) {
             for (const evt of events.laps) {
@@ -531,37 +562,6 @@ def process_snapshot(snapshot):
                 if (!prev || evt.lap_duration < prev.lap_duration) {
                   bestLaps[evt.driver_number] = { lap_duration: evt.lap_duration, lap_number: evt.lap_number };
                 }
-              }
-            }
-          }
-
-          const positions = [];
-          const intervals = [];
-
-          if (isNonRace) {
-            // Practice/qualifying: derive positions from best lap times
-            const sorted = Object.keys(bestLaps).sort((a, b) => bestLaps[a].lap_duration - bestLaps[b].lap_duration);
-            for (let i = 0; i < sorted.length; i++) {
-              positions.push({ driver_number: parseInt(sorted[i]), position: i + 1 });
-            }
-          } else {
-            // Race: use position events
-            const posSeen = new Set();
-            for (let i = events.position.length - 1; i >= 0; i--) {
-              const evt = events.position[i];
-              if (evt.event_date <= timestamp && !posSeen.has(evt.driver_number)) {
-                posSeen.add(evt.driver_number);
-                positions.push({ driver_number: evt.driver_number, position: evt.position });
-              }
-            }
-
-            // Latest interval per driver at or before timestamp
-            const intSeen = new Set();
-            for (let i = events.intervals.length - 1; i >= 0; i--) {
-              const evt = events.intervals[i];
-              if (evt.event_date <= timestamp && !intSeen.has(evt.driver_number)) {
-                intSeen.add(evt.driver_number);
-                intervals.push({ driver_number: evt.driver_number, interval: evt.interval });
               }
             }
           }

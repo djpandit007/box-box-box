@@ -39,6 +39,15 @@ async def get_standings(session_key: int, request: Request) -> list[dict]:
         )
         positions = {row[0]: row[1].get("position") for row in pos_result.all()}
 
+        # Fall back to starting grid if no position events yet
+        if not positions:
+            grid_result = await db.execute(
+                select(RaceEvent.driver_number, RaceEvent.data).where(
+                    RaceEvent.session_key == session_key, RaceEvent.source == "starting_grid"
+                )
+            )
+            positions = {row[0]: row[1].get("position") for row in grid_result.all()}
+
         int_subq = (
             select(RaceEvent.driver_number, func.max(RaceEvent.event_date).label("max_date"))
             .where(RaceEvent.session_key == session_key, RaceEvent.source == "intervals")
