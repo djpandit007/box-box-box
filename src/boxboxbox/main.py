@@ -88,15 +88,33 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
                 # Positions
                 positions: list[dict] = []
                 if non_race:
-                    # Derive positions from best lap ranking
+                    # Derive positions from best lap ranking (current phase only)
                     sorted_drivers = sorted(best_laps, key=lambda d: best_laps[d]["lap_duration"])
                     positions = [{"driver_number": dn, "position": idx} for idx, dn in enumerate(sorted_drivers, 1)]
-                    # Include drivers with no lap time at the bottom
+                    # Append eliminated drivers at their final position, then
+                    # remaining drivers (no time yet) at the bottom
+                    active = set(best_laps)
+                    if "Qualifying" in session_type:
+                        sr_result = await db.execute(
+                            select(RaceEvent.driver_number, RaceEvent.data).where(
+                                RaceEvent.session_key == session_key,
+                                RaceEvent.source == "session_result",
+                            )
+                        )
+                        for dn, data in sr_result.all():
+                            if dn in active or dn is None:
+                                continue
+                            dur = data.get("duration")
+                            if isinstance(dur, list) and len(dur) >= 3:
+                                final_pos = data.get("position")
+                                if final_pos is not None:
+                                    positions.append({"driver_number": dn, "position": final_pos})
+                                    active.add(dn)
                     driver_result = await db.execute(
                         select(Driver.driver_number).where(Driver.session_key == session_key)
                     )
                     all_drivers = {row[0] for row in driver_result.all()}
-                    no_time = all_drivers - set(best_laps)
+                    no_time = all_drivers - active
                     for dn in no_time:
                         positions.append({"driver_number": dn, "position": len(positions) + 1})
                 else:

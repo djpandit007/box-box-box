@@ -570,9 +570,23 @@ def process_snapshot(snapshot):
             sorted.forEach(([dn, _], idx) => {
               positions.push({ driver_number: Number(dn), position: idx + 1 });
             });
-            // Add drivers with no lap time at the bottom
+            // Append eliminated drivers at their final position from session_result
+            const active = new Set(Object.keys(bestLaps).map(Number));
+            const elim = this.replayData.eliminated || {};
+            for (const phase of ["q1", "q2"]) {
+              for (const dn of (elim[phase] || [])) {
+                if (!active.has(dn)) {
+                  // Find their final position from session_result standings
+                  const sr = this.replayData.events.session_result_positions || {};
+                  const finalPos = sr[dn];
+                  positions.push({ driver_number: dn, position: finalPos || positions.length + 1 });
+                  active.add(dn);
+                }
+              }
+            }
+            // Remaining drivers with no time at the bottom
             for (const dn of Object.keys(this.replayData.drivers)) {
-              if (!bestLaps[Number(dn)]) {
+              if (!active.has(Number(dn))) {
                 positions.push({ driver_number: Number(dn), position: positions.length + 1 });
               }
             }

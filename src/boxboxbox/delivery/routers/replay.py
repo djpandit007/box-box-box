@@ -142,6 +142,7 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
         # For qualifying, compute phase boundary timestamps and elimination status
         phase_boundaries: list[str] = []
         eliminated: dict[str, list[int]] = {}
+        session_result_positions: dict[int, int] = {}
         if non_race and session and "Qualifying" in session.session_type:
             rc_result = await db.execute(
                 select(RaceEvent.event_date, RaceEvent.data)
@@ -164,8 +165,13 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
                 )
             )
             for dn, data in sr_result.all():
+                if dn is None:
+                    continue
+                final_pos = data.get("position")
+                if final_pos is not None:
+                    session_result_positions[dn] = final_pos
                 dur = data.get("duration")
-                if not isinstance(dur, list) or len(dur) < 3 or dn is None:
+                if not isinstance(dur, list) or len(dur) < 3:
                     continue
                 if dur[0] is not None and dur[1] is None:
                     eliminated.setdefault("q1", []).append(dn)
@@ -186,6 +192,7 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
             "weather": weather_events,
             "laps": lap_events,
             "starting_grid": starting_grid_events,
+            "session_result_positions": session_result_positions,
         },
         "drivers": drivers,
         "summaries": summaries,

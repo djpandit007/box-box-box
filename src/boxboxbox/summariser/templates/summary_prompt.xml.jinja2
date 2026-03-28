@@ -43,7 +43,7 @@
 {% if standings %}
 <standings description="Current standings based on fastest lap time so far in this session">
 {% for s in standings %}
-  <driver position="{{ s.position }}" name="{{ s.driver }}" best_lap="{{ s.best_lap | lap_time }}"{% if s.gap and s.gap > 0 %} gap="+{{ s.gap | lap_time }}"{% endif %} />
+  <driver position="{{ s.position }}" name="{{ s.driver }}" best_lap="{{ s.best_lap | lap_time }}"{% if s.gap and s.gap > 0 %} gap="+{{ s.gap | lap_time }}"{% endif %}{% if s.eliminated %} status="eliminated_{{ s.eliminated }}"{% endif %} />
 {% endfor %}
 </standings>
 {% endif %}
