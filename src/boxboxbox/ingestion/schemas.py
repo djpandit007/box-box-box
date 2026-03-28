@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict
-from pydantic import field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class SessionResponse(BaseModel):
@@ -62,7 +61,7 @@ class RaceControlResponse(BaseModel):
     flag: str | None = None
     scope: str | None = None
     sector: int | None = None
-    qualifying_phase: str | None = None
+    qualifying_phase: int | None = None
     message: str
 
     @field_validator("date")
