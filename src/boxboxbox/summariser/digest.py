@@ -13,11 +13,14 @@ from boxboxbox.config import settings
 from boxboxbox.db import SessionFactory
 from boxboxbox.models import Driver, RaceEvent, Session, Summary, SummaryType
 from boxboxbox.summariser.embeddings import EmbeddingClient
+from boxboxbox.summariser.prompt import _format_lap_time
 
 logger = logging.getLogger(__name__)
 
+
 _TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
 _jinja_env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), keep_trailing_newline=True)
+_jinja_env.filters["lap_time"] = _format_lap_time
 
 
 async def generate_digest(

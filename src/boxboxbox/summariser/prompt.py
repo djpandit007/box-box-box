@@ -8,10 +8,23 @@ from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.models import Driver, RaceEvent
 
 _TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
 _jinja_env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), keep_trailing_newline=True)
+
+
+def _format_lap_time(seconds: float | None) -> str:
+    """Format seconds as M:SS.mmm (e.g. 88.456 -> 1:28.456)."""
+    if seconds is None:
+        return "N/A"
+    minutes = int(seconds // 60)
+    remainder = seconds - minutes * 60
+    return f"{minutes}:{remainder:06.3f}"
+
+
+_jinja_env.filters["lap_time"] = _format_lap_time
 
 
 async def build_prompt(
@@ -32,8 +45,24 @@ async def build_prompt(
         return None
 
     driver_map = await _fetch_driver_map(db, session_key)
+
+    non_race = is_non_race_session(session_type)
+    best_laps: dict[int, float] = {}
+    session_results: dict[int, dict] = {}
+    if non_race:
+        best_laps = await _fetch_best_laps(db, session_key, window_end)
+        if "Qualifying" in session_type:
+            session_results = await _fetch_session_results(db, session_key)
+
     context = _build_template_context(
-        events_by_source, driver_map, previous_summary, window_start, window_end, session_type
+        events_by_source,
+        driver_map,
+        previous_summary,
+        window_start,
+        window_end,
+        session_type,
+        best_laps=best_laps,
+        session_results=session_results,
     )
     template = _jinja_env.get_template("summary_prompt.xml.jinja2")
     return template.render(context)
@@ -72,6 +101,36 @@ async def _fetch_driver_map(db: AsyncSession, session_key: int) -> dict[int, Dri
     return {d.driver_number: d for d in drivers}
 
 
+async def _fetch_best_laps(db: AsyncSession, session_key: int, up_to: datetime) -> dict[int, float]:
+    """Return best lap duration per driver for all laps up to the given time."""
+    result = await db.execute(
+        select(RaceEvent.driver_number, RaceEvent.data).where(
+            RaceEvent.session_key == session_key,
+            RaceEvent.source == "laps",
+            RaceEvent.event_date < up_to,
+        )
+    )
+    best: dict[int, float] = {}
+    for driver_number, data in result.all():
+        dur = data.get("lap_duration")
+        if dur is None or driver_number is None:
+            continue
+        if driver_number not in best or dur < best[driver_number]:
+            best[driver_number] = dur
+    return best
+
+
+async def _fetch_session_results(db: AsyncSession, session_key: int) -> dict[int, dict]:
+    """Return session_result data keyed by driver_number."""
+    result = await db.execute(
+        select(RaceEvent.driver_number, RaceEvent.data).where(
+            RaceEvent.session_key == session_key,
+            RaceEvent.source == "session_result",
+        )
+    )
+    return {dn: data for dn, data in result.all() if dn is not None}
+
+
 def _driver_name(driver_map: dict[int, Driver], driver_number: int | None) -> str | None:
     """Resolve a driver number to 'Full Name (ACR)' format."""
     if driver_number is None:
@@ -100,6 +159,8 @@ def _build_template_context(
     window_start: datetime,
     window_end: datetime,
     session_type: str = "Race",
+    best_laps: dict[int, float] | None = None,
+    session_results: dict[int, dict] | None = None,
 ) -> dict:
     """Transform raw DB events into clean template context dicts."""
     ctx: dict = {
@@ -168,6 +229,26 @@ def _build_template_context(
                 for e in standings
             ],
         }
+
+    # Non-race standings — sorted by best lap so far
+    if best_laps:
+        sorted_drivers = sorted(best_laps, key=lambda d: best_laps[d])
+        leader_lap = best_laps[sorted_drivers[0]] if sorted_drivers else None
+        standings_list = []
+        for idx, dn in enumerate(sorted_drivers, 1):
+            entry: dict = {
+                "position": idx,
+                "driver": _driver_name(driver_map, dn) or f"#{dn}",
+                "best_lap": best_laps[dn],
+                "gap": best_laps[dn] - leader_lap if leader_lap else None,
+            }
+            # For qualifying, attach per-phase times from session_result
+            if session_results and dn in session_results:
+                duration = session_results[dn].get("duration")
+                if isinstance(duration, list):
+                    entry["q_times"] = ", ".join(_format_lap_time(t) if t is not None else "N/A" for t in duration)
+            standings_list.append(entry)
+        ctx["standings"] = standings_list
 
     # Intervals — latest reading per driver
     if "intervals" in events_by_source:

@@ -36,6 +36,14 @@
 </positions>
 {% endif %}
 
+{% if standings %}
+<standings description="Current standings based on fastest lap time so far in this session">
+{% for s in standings %}
+  <driver position="{{ s.position }}" name="{{ s.driver }}" best_lap="{{ s.best_lap | lap_time }}"{% if s.gap and s.gap > 0 %} gap="+{{ s.gap | lap_time }}"{% endif %}{% if s.q_times %} q_times="{{ s.q_times }}"{% endif %} />
+{% endfor %}
+</standings>
+{% endif %}
+
 {% if intervals %}
 <intervals time="{{ intervals.time }}">
 {% for i in intervals.gaps %}
@@ -45,9 +53,9 @@
 {% endif %}
 
 {% if lap_times %}
-<lap_times>
+<lap_times description="Individual laps completed during this window (not necessarily fastest laps)">
 {% for e in lap_times %}
-  <lap driver="{{ e.driver }}" number="{{ e.lap_number }}" duration="{{ e.duration }}s" />
+  <lap driver="{{ e.driver }}" number="{{ e.lap_number }}" duration="{{ e.duration | lap_time }}" />
 {% endfor %}
 </lap_times>
 {% endif %}

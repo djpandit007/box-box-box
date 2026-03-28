@@ -7,7 +7,7 @@
   {% if r.position %}
   <result position="{{ r.position }}" driver="{{ r.driver }}">
     {%- if r.duration is not none %}
-    {%- if r.duration is iterable and r.duration is not string %} duration_q1_q2_q3="{{ r.duration | join(', ') }}"{% else %} total_time="{{ r.duration }}"{% endif %}
+    {%- if r.duration is iterable and r.duration is not string %} duration_q1_q2_q3="{{ r.duration | map('lap_time') | join(', ') }}"{% else %} total_time="{{ r.duration | lap_time }}"{% endif %}
     {%- endif %}
     {%- if r.gap_to_leader and r.gap_to_leader != 0 %}
     {%- if r.gap_to_leader is iterable and r.gap_to_leader is not string %} gap_q1_q2_q3="{{ r.gap_to_leader | join(', ') }}"{% else %} gap_to_leader="{{ r.gap_to_leader }}"{% endif %}

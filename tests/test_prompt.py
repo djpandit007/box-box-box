@@ -7,6 +7,7 @@ from boxboxbox.models import Driver, RaceEvent
 from boxboxbox.summariser.prompt import (
     _build_template_context,
     _driver_name,
+    _format_lap_time,
     _format_time,
     _sort_gap,
     build_prompt,
@@ -284,6 +285,115 @@ class TestBuildTemplateContext:
         assert "intervals" not in ctx
         assert "lap_times" in ctx
         assert len(ctx["lap_times"]) == 2
+
+
+class TestFormatLapTime:
+    def test_under_one_minute(self):
+        assert _format_lap_time(58.456) == "0:58.456"
+
+    def test_over_one_minute(self):
+        assert _format_lap_time(88.456) == "1:28.456"
+
+    def test_exact_minute(self):
+        assert _format_lap_time(60.0) == "1:00.000"
+
+    def test_none(self):
+        assert _format_lap_time(None) == "N/A"
+
+    def test_long_time(self):
+        # Race total time: 5765.432s = 96:05.432
+        assert _format_lap_time(5765.432) == "96:05.432"
+
+
+class TestNonRaceStandings:
+    def test_practice_standings_sorted_by_best_lap(self):
+        events = {
+            "laps": [
+                {"driver_number": 44, "lap_number": 5, "lap_duration": 80.5},
+                {"driver_number": 63, "lap_number": 3, "lap_duration": 79.8},
+            ],
+        }
+        best_laps = {44: 80.5, 63: 79.8}
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Practice 1",
+            best_laps=best_laps,
+        )
+        assert "standings" in ctx
+        assert "positions" not in ctx
+        assert ctx["standings"][0]["driver"] == "George RUSSELL (RUS)"
+        assert ctx["standings"][0]["best_lap"] == 79.8
+        assert ctx["standings"][0]["gap"] == 0.0
+        assert ctx["standings"][1]["driver"] == "Lewis HAMILTON (HAM)"
+        assert ctx["standings"][1]["gap"] == pytest.approx(0.7)
+
+    def test_qualifying_standings_include_q_times(self):
+        events = {
+            "laps": [
+                {"driver_number": 44, "lap_number": 5, "lap_duration": 88.5},
+            ],
+        }
+        best_laps = {44: 88.5, 63: 87.9}
+        session_results = {
+            44: {"duration": [90.1, 89.2, 88.5], "gap_to_leader": [0.5, 0.3, 0.6]},
+            63: {"duration": [89.6, 88.9, 87.9], "gap_to_leader": [0.0, 0.0, 0.0]},
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Qualifying",
+            best_laps=best_laps,
+            session_results=session_results,
+        )
+        standings = ctx["standings"]
+        assert standings[0]["driver"] == "George RUSSELL (RUS)"
+        assert "q_times" in standings[0]
+        assert "1:29.600" in standings[0]["q_times"]  # Q1
+        assert "1:28.900" in standings[0]["q_times"]  # Q2
+        assert "1:27.900" in standings[0]["q_times"]  # Q3
+
+    def test_qualifying_eliminated_driver_q_times_show_na(self):
+        events = {
+            "laps": [
+                {"driver_number": 44, "lap_number": 2, "lap_duration": 90.5},
+            ],
+        }
+        best_laps = {44: 90.5}
+        session_results = {
+            44: {"duration": [90.5, 90.2, None], "gap_to_leader": [0.6, 1.2, None]},
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Qualifying",
+            best_laps=best_laps,
+            session_results=session_results,
+        )
+        assert "N/A" in ctx["standings"][0]["q_times"]
+
+    def test_no_standings_without_best_laps(self):
+        events = {
+            "race_control": [{"date": "2026-03-15T06:20:01+00:00", "message": "test"}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Practice 1",
+        )
+        assert "standings" not in ctx
 
 
 class TestBuildPrompt:
