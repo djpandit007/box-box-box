@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict
-from pydantic import field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class SessionResponse(BaseModel):
@@ -62,7 +61,7 @@ class RaceControlResponse(BaseModel):
     flag: str | None = None
     scope: str | None = None
     sector: int | None = None
-    qualifying_phase: str | None = None
+    qualifying_phase: int | None = None
     message: str
 
     @field_validator("date")
@@ -240,8 +239,25 @@ class SessionResultResponse(BaseModel):
     dnf: bool = False
     dns: bool = False
     dsq: bool = False
-    duration: float | None = None
-    gap_to_leader: float | str | None = None
+    duration: float | list[float | None] | None = None
+    gap_to_leader: float | str | list[float | None] | None = None
+
+
+class StartingGridResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    meeting_key: int
+    session_key: int
+    driver_number: int
+    position: int
+    date: datetime
+
+    @field_validator("date")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
 
 
 ENDPOINT_MODELS: dict[str, type[BaseModel]] = {
@@ -257,4 +273,5 @@ ENDPOINT_MODELS: dict[str, type[BaseModel]] = {
     "weather": WeatherResponse,
     "team_radio": TeamRadioResponse,
     "session_result": SessionResultResponse,
+    "starting_grid": StartingGridResponse,
 }

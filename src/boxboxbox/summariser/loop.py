@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 
 from pydantic_ai import Agent
@@ -27,6 +28,7 @@ class SummarisationLoop:
         session_type: str = "Race",
         interval_seconds: int = 60,
         grace_seconds: int = 300,
+        on_summary: Callable[[Summary], Awaitable[None]] | None = None,
     ):
         self._session_factory = session_factory
         self._agent = agent
@@ -35,6 +37,7 @@ class SummarisationLoop:
         self._session_type = session_type
         self._interval = interval_seconds
         self._grace_seconds = grace_seconds
+        self._on_summary = on_summary
         self._last_window_end: datetime | None = None
         self._no_events_since: datetime | None = None
 
@@ -109,6 +112,12 @@ class SummarisationLoop:
                 )
                 db.add(summary)
                 await db.commit()
+
+                if self._on_summary is not None:
+                    try:
+                        await self._on_summary(summary)
+                    except Exception:
+                        logger.exception("on_summary callback failed; continuing")
             except Exception:
                 logger.exception("Failed to generate summary for window %s - %s, skipping", window_start, window_end)
 

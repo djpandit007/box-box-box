@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from boxboxbox.ingestion.endpoints import ENDPOINTS, Priority
+from boxboxbox.ingestion.endpoints import ENDPOINTS, EndpointConfig, Priority, is_non_race_session
 from boxboxbox.ingestion.poller import Poller
 
 
@@ -106,9 +106,31 @@ class TestIncrementalDateTracking:
         poller = Poller(mock_client, mock_session_factory)
         poller._session_key = 12345
 
-        from boxboxbox.ingestion.endpoints import EndpointConfig, Priority
-
         ep = EndpointConfig("race_control", "/race_control", Priority.P1)
         await poller._fetch_and_store(ep)
 
         assert poller._last_dates["race_control"] == "2025-03-16T14:01:00"
+
+
+class TestIsNonRaceSession:
+    @pytest.mark.parametrize(
+        "session_type",
+        ["Practice 1", "Practice 2", "Practice 3", "Qualifying", "Sprint Shootout", "Sprint Qualifying"],
+    )
+    def test_non_race_types(self, session_type):
+        assert is_non_race_session(session_type) is True
+
+    @pytest.mark.parametrize("session_type", ["Race", "Sprint"])
+    def test_race_types(self, session_type):
+        assert is_non_race_session(session_type) is False
+
+
+class TestEndpointPriorities:
+    def test_position_and_laps_are_p3(self):
+        names_at_p3 = {ep.name for ep in ENDPOINTS if ep.priority == Priority.P3}
+        assert "position" in names_at_p3
+        assert "laps" in names_at_p3
+
+    def test_intervals_is_p2(self):
+        intervals = [ep for ep in ENDPOINTS if ep.name == "intervals"]
+        assert intervals[0].priority == Priority.P2

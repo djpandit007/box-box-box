@@ -264,6 +264,27 @@ class TestBuildTemplateContext:
         assert "overtakes" not in ctx
         assert "pit_stops" not in ctx
 
+    def test_no_positions_for_practice(self):
+        """Practice sessions have no position/interval events — only laps."""
+        events = {
+            "laps": [
+                {"driver_number": 44, "lap_number": 1, "lap_duration": 80.5},
+                {"driver_number": 63, "lap_number": 1, "lap_duration": 81.2},
+            ],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 21),
+            session_type="Practice 1",
+        )
+        assert "positions" not in ctx
+        assert "intervals" not in ctx
+        assert "lap_times" in ctx
+        assert len(ctx["lap_times"]) == 2
+
 
 class TestBuildPrompt:
     @pytest.mark.asyncio

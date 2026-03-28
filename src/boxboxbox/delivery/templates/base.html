@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>box-box-box &mdash; {{ session_name }} {{ country_name }}/{{ circuit_short_name }} &mdash; {% if is_live %}Live{% else %}Replay{% endif %}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1400px; margin: 0 auto; padding: 1rem; }
+    .layout { display: grid; grid-template-columns: minmax(520px, 1fr) 2fr; gap: 1.5rem; }
+    .leaderboard { width: 100%; border-collapse: collapse; }
+    .leaderboard th, .leaderboard td { padding: .4rem .6rem; text-align: left; border-bottom: 1px solid #ddd; }
+    .leaderboard tbody tr { transition: transform 0.3s ease; }
+    .leaderboard td.driver-cell { white-space: nowrap; }
+    .leaderboard td.team-cell { font-size: .85em; }
+    .battle { background: #fff3cd; }
+    .trend-closing { color: green; }
+    .trend-opening { color: red; }
+    .summary-card { border-left: 3px solid #e10600; padding: .5rem 1rem; margin-bottom: 1rem; }
+    .summary-card__time { font-size: .75rem; color: #888; margin-bottom: .3rem; }
+    .summary-card__audio { width: 100%; margin-top: .4rem; }
+    #alerts { position: fixed; top: 1rem; right: 1rem; width: 280px; }
+    .alert { background: #e10600; color: white; border-radius: 4px; padding: .6rem 1rem; margin-bottom: .5rem; }
+    .replay-bar { display: flex; align-items: center; gap: 1rem; padding: .75rem 0; margin-bottom: 1rem; border-bottom: 1px solid #ddd; }
+    .replay-bar input[type="range"] { flex: 1; }
+    .replay-bar button { padding: .4rem 1rem; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer; min-width: 5rem; }
+    .replay-bar button:hover { background: #f0f0f0; }
+    .replay-bar .time-label { font-family: monospace; font-size: .9rem; min-width: 5.5rem; }
+    .replay-loading { text-align: center; padding: 2rem; color: #888; }
+    .session-title { font-size: 1.1rem; font-weight: normal; color: #555; margin: 0 0 1rem; }
+    .digest-section { margin-bottom: 1.5rem; border-bottom: 2px solid #e10600; padding-bottom: 1rem; }
+    .digest-toggle { background: none; border: none; font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 0; color: #333; }
+    .digest-toggle:hover { color: #e10600; }
+    .digest-content { margin-top: .75rem; line-height: 1.6; }
+    .digest-content p { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>box-box-box</h1>
+  {% if session_name %}<p class="session-title">{{ session_name }} &mdash; {{ country_name }}/{{ circuit_short_name }}</p>{% endif %}
+
+  <div id="alerts"></div>
+
+  {% if not is_live %}
+  {# Replay mode: Alpine.js controller wraps the entire layout #}
+  <div x-data="replayController()" x-init="init()">
+    <div class="replay-bar" x-show="loaded">
+      <button @click="togglePlay()" x-text="playing ? 'Pause' : 'Play'"></button>
+      <input type="range" min="0" :max="maxTick" x-model.number="currentTick" @input="onSliderInput()">
+      <span class="time-label" x-text="currentTimeLabel"></span>
+    </div>
+    <div class="replay-loading" x-show="!loaded">Loading replay data&hellip;</div>
+
+    <!-- Digest section (collapsed, auto-reveals at end of session) -->
+    <div x-show="loaded && digest" class="digest-section">
+      <button @click="digestOpen = !digestOpen" class="digest-toggle">
+        Session Digest <span x-text="digestOpen ? '\u25be' : '\u25b8'"></span>
+      </button>
+      <div x-show="digestOpen" x-transition class="digest-content">
+        <p x-text="digest ? digest.summary_text : ''"></p>
+        <template x-if="digest && digest.audio_url">
+          <audio controls :src="digest.audio_url" style="width:100%;margin-top:.5rem"></audio>
+        </template>
+      </div>
+    </div>
+
+    <div class="layout" x-show="loaded">
+      <div>
+        <h2>Standings</h2>
+        {% include "partials/leaderboard.html" %}
+      </div>
+      <div>
+        <h2>Race Timeline</h2>
+        <div id="summary-timeline">
+          <template x-for="summary in visibleSummaries" :key="summary.window_end">
+            <article class="summary-card">
+              <div class="summary-card__time" x-text="utcToLocal(summary.window_start) + ' \u2014 ' + utcToLocal(summary.window_end)"></div>
+              <p x-text="summary.summary_text"></p>
+              <template x-if="summary.audio_url">
+                <audio class="summary-card__audio" controls :src="summary.audio_url"></audio>
+              </template>
+            </article>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  {# Live mode: static layout, updated via WebSocket #}
+  <div class="layout">
+    <div>
+      <h2>Standings</h2>
+      {% include "partials/leaderboard.html" %}
+    </div>
+    <div>
+      <h2>Race Timeline</h2>
+      <div id="summary-timeline"></div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- htmx + WebSocket extension -->
+  <script src="https://unpkg.com/htmx.org@2/dist/htmx.min.js"></script>
+  <script src="https://unpkg.com/htmx-ext-ws@2/ws.js"></script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+
+  {% if is_live %}
+  <!-- WebSocket connection (live mode only) -->
+  <script>
+    // Fetch driver metadata once for the leaderboard
+    (async function() {
+      const waitForPyodide = () => new Promise(resolve => {
+        const check = () => window._pyodideReady ? resolve() : setTimeout(check, 100);
+        check();
+      });
+      try {
+        const resp = await fetch("/api/sessions/{{ session_key }}/standings");
+        const standings = await resp.json();
+        const drivers = {};
+        for (const row of standings) {
+          drivers[row.driver_number] = {
+            name_acronym: row.name_acronym || "",
+            full_name: row.full_name || "",
+            team_name: row.team_name || "",
+            team_colour: row.team_colour || "ccc",
+            headshot_url: null,
+          };
+        }
+        await waitForPyodide();
+        window._setDrivers(drivers);
+        window._setSessionType("{{ session_type }}");
+      } catch (e) { console.error("Failed to load driver info:", e); }
+    })();
+
+    const wsUrl = "ws://" + window.location.host + "/ws";
+    const socket = new WebSocket(wsUrl);
+
+    socket.addEventListener("message", function(event) {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "html") {
+        // Let htmx process the OOB swap
+        htmx.process(document.createElement("div"));
+        const tmp = document.createElement("div");
+        tmp.innerHTML = msg.html;
+        htmx.process(tmp);
+        document.body.appendChild(tmp);
+        htmx.trigger(tmp, "htmx:oobBeforeSwap");
+        // Use htmx built-in OOB swap
+        htmx.swap(tmp, msg.html, { swapStyle: "none" });
+      } else if (msg.type === "snapshot" && window._pyodideReady) {
+        window._processSnapshot(msg);
+      }
+    });
+  </script>
+  {% endif %}
+
+  <!-- Pyodide -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js"></script>
+  <script>
+    window._pyodideReady = false;
+
+    async function initPyodide() {
+      const pyodide = await loadPyodide();
+      await pyodide.runPythonAsync(`
+BATTLE_THRESHOLD = 1.5
+STABLE_TOLERANCE = 0.1
+
+prev_snapshot = None
+_driver_info = {}
+_session_type = "Race"
+
+def set_drivers(drivers_dict):
+    global _driver_info
+    _driver_info = drivers_dict
+
+def set_session_type(st):
+    global _session_type
+    _session_type = st
+
+def format_lap_time(seconds):
+    if seconds is None:
+        return ""
+    mins = int(seconds // 60)
+    secs = seconds % 60
+    return f"{mins}:{secs:06.3f}"
+
+def reset_state():
+    global prev_snapshot
+    from js import document
+    prev_snapshot = None
+    alerts = document.getElementById("alerts")
+    if alerts:
+        alerts.innerHTML = ""
+
+def update_leaderboard_row(driver_number, interval, delta, trend):
+    from js import document
+    row = document.querySelector(f"tr[data-driver='{driver_number}']")
+    if row is None:
+        return
+    interval_cell = row.querySelector(".interval")
+    trend_cell = row.querySelector(".trend")
+    if interval_cell:
+        interval_cell.textContent = f"{interval:.3f}" if interval is not None else ""
+    if trend_cell:
+        trend_cell.className = "trend trend-" + trend
+        trend_cell.textContent = "\\u25b2" if trend == "closing" else "\\u25bc" if trend == "opening" else "\\u2013"
+
+def show_battle_alert(leader, chaser, gap):
+    from js import document
+    alert_id = f"battle-{leader}-{chaser}"
+    if document.getElementById(alert_id):
+        return
+    alerts = document.getElementById("alerts")
+    div = document.createElement("div")
+    div.id = alert_id
+    div.className = "alert"
+    div.textContent = f"Battle! P{leader} vs P{chaser} — {gap:.2f}s"
+    alerts.appendChild(div)
+
+def clear_battle_alert(leader, chaser):
+    from js import document
+    el = document.getElementById(f"battle-{leader}-{chaser}")
+    if el:
+        el.remove()
+
+def show_weather_alert():
+    from js import document
+    if document.getElementById("weather-alert"):
+        return
+    alerts = document.getElementById("alerts")
+    div = document.createElement("div")
+    div.id = "weather-alert"
+    div.className = "alert"
+    div.textContent = "Rain has started!"
+    alerts.appendChild(div)
+
+def _get_lap_info(best_laps, driver_number):
+    return best_laps.get(driver_number, best_laps.get(str(driver_number), {}))
+
+def build_leaderboard(snapshot):
+    from js import document
+    is_race = _session_type == "Race"
+    positions = {p["driver_number"]: p["position"] for p in snapshot["positions"]}
+    intervals = {i["driver_number"]: i["interval"] for i in snapshot["intervals"]}
+    best_laps = snapshot.get("best_laps", {})
+
+    # Find leader's best lap for gap calculation (practice/qualifying)
+    _leader_lap = None
+    if not is_race and best_laps:
+        durations = [v.get("lap_duration") for v in best_laps.values() if v.get("lap_duration") is not None]
+        _leader_lap = min(durations) if durations else None
+
+    # Sort: race by position, practice/qualifying by fastest lap (no time = bottom)
+    if is_race:
+        sorted_drivers = sorted(positions, key=lambda d: positions[d])
+    else:
+        def lap_sort_key(d):
+            info = _get_lap_info(best_laps, d)
+            dur = info.get("lap_duration") if info else None
+            return (0, dur) if dur is not None else (1, 0)
+        sorted_drivers = sorted(positions, key=lap_sort_key)
+
+    tbody = document.getElementById("leaderboard-body")
+    existing = {}
+    for row in tbody.querySelectorAll("tr[data-driver]"):
+        existing[row.getAttribute("data-driver")] = row
+
+    seen = set()
+    for idx, driver_number in enumerate(sorted_drivers, 1):
+        key = str(driver_number)
+        seen.add(key)
+        pos = idx if not is_race else positions[driver_number]
+        interval = intervals.get(driver_number)
+        info = _driver_info.get(driver_number, _driver_info.get(key, {}))
+        name = info.get("name_acronym", "")
+        team = info.get("team_name", "")
+        colour = info.get("team_colour", "ccc")
+        headshot = info.get("headshot_url", "") or ""
+        img_html = f"<img src='{headshot}' width='24' height='24' style='border-radius:50%;vertical-align:middle;margin-right:4px'>" if headshot else ""
+        team_dot = f"<span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#{colour};margin-right:6px;vertical-align:middle'></span>"
+
+        if is_race:
+            col4 = f"{interval:.3f}" if interval is not None else ""
+            col5_class = "trend trend-stable"
+            col5_text = "\\u2013"
+        else:
+            lap_info = _get_lap_info(best_laps, driver_number)
+            col4 = format_lap_time(lap_info.get("lap_duration")) if lap_info else ""
+            dur = lap_info.get("lap_duration") if lap_info else None
+            if dur is not None and _leader_lap is not None and dur > _leader_lap:
+                col5_text = f"+{dur - _leader_lap:.3f}"
+            else:
+                col5_text = ""
+            col5_class = "trend"
+
+        if key in existing:
+            tr = existing[key]
+            cells = tr.querySelectorAll("td")
+            if cells.length >= 5:
+                cells[0].textContent = str(pos)
+                cells[3].textContent = col4
+                cells[4].className = col5_class
+                cells[4].textContent = col5_text
+        else:
+            tr = document.createElement("tr")
+            tr.setAttribute("data-driver", key)
+            if is_race:
+                col4_html = f"<td class='interval'>{col4}</td>"
+                col5_html = f"<td class='{col5_class}'>{col5_text}</td>"
+            else:
+                col4_html = f"<td class='interval' style='font-family:monospace'>{col4}</td>"
+                col5_html = f"<td class='{col5_class}' style='font-family:monospace'>{col5_text}</td>"
+            tr.innerHTML = (
+                f"<td>{pos}</td>"
+                f"<td class='driver-cell'>{img_html}{name} <span style='color:#999;font-size:.8em'>#{driver_number}</span></td>"
+                f"<td class='team-cell'>{team_dot}{team}</td>"
+                f"{col4_html}{col5_html}"
+            )
+        # appendChild moves existing nodes, reordering them
+        tbody.appendChild(tr)
+
+    # Remove drivers no longer in the standings
+    for key, row in existing.items():
+        if key not in seen:
+            row.remove()
+
+def process_snapshot(snapshot):
+    global prev_snapshot
+    positions = {p["driver_number"]: p["position"] for p in snapshot["positions"]}
+    intervals = {i["driver_number"]: i["interval"] for i in snapshot["intervals"]}
+
+    # Rebuild leaderboard on every snapshot (positions may have changed)
+    if positions:
+        build_leaderboard(snapshot)
+
+    # Gap deltas
+    if prev_snapshot:
+        prev_intervals = {i["driver_number"]: i["interval"] for i in prev_snapshot["intervals"]}
+        for driver, interval in intervals.items():
+            if interval is None:
+                continue
+            prev = prev_intervals.get(driver)
+            if prev is not None:
+                delta = interval - prev
+                trend = "closing" if delta < -STABLE_TOLERANCE else "opening" if delta > STABLE_TOLERANCE else "stable"
+                update_leaderboard_row(driver, interval, delta, trend)
+
+    # Battle detection
+    sorted_drivers = sorted(positions, key=lambda d: positions[d])
+    for i in range(len(sorted_drivers) - 1):
+        leader = sorted_drivers[i]
+        chaser = sorted_drivers[i + 1]
+        gap = intervals.get(chaser)
+        if gap is not None and gap < BATTLE_THRESHOLD:
+            show_battle_alert(leader, chaser, gap)
+        else:
+            clear_battle_alert(leader, chaser)
+
+    # Weather alert
+    if prev_snapshot and snapshot["weather"]["rainfall"] == 1 and prev_snapshot["weather"]["rainfall"] == 0:
+        show_weather_alert()
+
+    prev_snapshot = snapshot
+`);
+
+      // FLIP animation helpers for smooth leaderboard reordering
+      window._snapshotPositions = function() {
+        var tbody = document.getElementById("leaderboard-body");
+        var positions = {};
+        var rows = tbody.querySelectorAll("tr[data-driver]");
+        for (var i = 0; i < rows.length; i++) {
+          positions[rows[i].getAttribute("data-driver")] = rows[i].getBoundingClientRect().top;
+        }
+        window._rowPositions = positions;
+      };
+      window._animateReorder = function() {
+        var tbody = document.getElementById("leaderboard-body");
+        var oldPositions = window._rowPositions || {};
+        var rows = tbody.querySelectorAll("tr[data-driver]");
+        for (var i = 0; i < rows.length; i++) {
+          var row = rows[i];
+          var key = row.getAttribute("data-driver");
+          var oldTop = oldPositions[key];
+          if (oldTop === undefined) continue;
+          var newTop = row.getBoundingClientRect().top;
+          var delta = oldTop - newTop;
+          if (Math.abs(delta) < 1) continue;
+          row.style.transition = "none";
+          row.style.transform = "translateY(" + delta + "px)";
+          row.offsetHeight; // force reflow
+          row.style.transition = "transform 0.3s ease";
+          row.style.transform = "";
+        }
+      };
+
+      window._processSnapshot = function(msg) {
+        window._snapshotPositions();
+        pyodide.globals.set("_snapshot", msg);
+        pyodide.runPython("process_snapshot(_snapshot.to_py())");
+        window._animateReorder();
+      };
+      window._resetState = function() {
+        pyodide.runPython("reset_state()");
+      };
+      window._setDrivers = function(driversObj) {
+        pyodide.globals.set("_drivers_js", driversObj);
+        pyodide.runPython("set_drivers(_drivers_js.to_py())");
+      };
+      window._setSessionType = function(st) {
+        pyodide.globals.set("_st_js", st);
+        pyodide.runPython("set_session_type(str(_st_js))");
+      };
+      window._pyodideReady = true;
+    }
+
+    initPyodide().catch(console.error);
+  </script>
+
+  {% if not is_live %}
+  <!-- Replay controller (replay mode only) -->
+  <script>
+    // Convert naive-UTC ISO string to local time display (HH:MM:SS)
+    function utcToLocal(isoStr) {
+      const d = new Date(isoStr + "Z");
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+    }
+
+    function replayController() {
+      return {
+        loaded: false,
+        replayData: null,
+        allSummaries: [],
+        digest: null,
+        digestOpen: false,
+        ticks: [],
+        currentTick: 0,
+        maxTick: 0,
+        playing: false,
+        playInterval: null,
+        prevTick: -1,
+        debounceTimer: null,
+
+        async init() {
+          const resp = await fetch("/api/sessions/{{ session_key }}/replay");
+          this.replayData = await resp.json();
+          this.allSummaries = this.replayData.summaries;
+          this.digest = this.replayData.digest || null;
+          this.buildTicks();
+          this.loaded = true;
+          // Wait for Pyodide to be ready, then set driver info and show initial state
+          await this.waitForPyodide();
+          if (this.replayData.drivers) {
+            window._setDrivers(this.replayData.drivers);
+          }
+          if (this.replayData.session_type) {
+            window._setSessionType(this.replayData.session_type);
+          }
+          this.applySnapshot();
+        },
+
+        waitForPyodide() {
+          return new Promise(resolve => {
+            const check = () => window._pyodideReady ? resolve() : setTimeout(check, 100);
+            check();
+          });
+        },
+
+        buildTicks() {
+          const tsSet = new Set();
+          const sessionStart = this.replayData.session_start;
+          const sessionEnd = this.replayData.session_end;
+          // Session boundaries anchor the slider endpoints
+          if (sessionStart) tsSet.add(sessionStart);
+          if (sessionEnd) tsSet.add(sessionEnd);
+          const events = this.replayData.events;
+          for (const source of ["position", "intervals", "weather", "laps"]) {
+            if (!events[source]) continue;
+            for (const evt of events[source]) {
+              // Quantize to 10-second boundaries using string manipulation
+              // to avoid Date timezone conversion issues with naive ISO strings
+              const ts = evt.event_date;
+              const secs = parseInt(ts.substring(17, 19), 10);
+              const quantized = ts.substring(0, 17) + String(Math.floor(secs / 10) * 10).padStart(2, "0");
+              // Only include ticks within session bounds
+              if (sessionStart && quantized < sessionStart) continue;
+              if (sessionEnd && quantized > sessionEnd) continue;
+              tsSet.add(quantized);
+            }
+          }
+          this.ticks = Array.from(tsSet).sort();
+          this.maxTick = Math.max(this.ticks.length - 1, 0);
+        },
+
+        onSliderInput() {
+          clearTimeout(this.debounceTimer);
+          this.debounceTimer = setTimeout(() => this.applySnapshot(), 50);
+        },
+
+        applySnapshot() {
+          if (!this.ticks.length || !window._pyodideReady) return;
+
+          const ts = this.ticks[this.currentTick];
+
+          // Reset Pyodide state when scrubbing backward
+          if (this.currentTick < this.prevTick) {
+            window._resetState();
+          }
+          this.prevTick = this.currentTick;
+
+          const snapshot = this.buildSnapshotAtTime(ts);
+          window._processSnapshot(snapshot);
+
+          // Auto-reveal digest when slider reaches the end
+          if (this.currentTick === this.maxTick && this.digest) {
+            this.digestOpen = true;
+          }
+        },
+
+        buildSnapshotAtTime(timestamp) {
+          const events = this.replayData.events;
+          const st = this.replayData.session_type || "";
+          const isNonRace = st !== "Race" && st !== "Sprint";
+
+          // Latest position per driver at or before timestamp (all session types)
+          const positions = [];
+          const posSeen = new Set();
+          for (let i = events.position.length - 1; i >= 0; i--) {
+            const evt = events.position[i];
+            if (evt.event_date <= timestamp && !posSeen.has(evt.driver_number)) {
+              posSeen.add(evt.driver_number);
+              positions.push({ driver_number: evt.driver_number, position: evt.position });
+            }
+          }
+
+          // Race with no positions yet: fall back to starting grid
+          if (!positions.length && !isNonRace && events.starting_grid) {
+            for (const g of events.starting_grid) {
+              positions.push({ driver_number: g.driver_number, position: g.position });
+            }
+          }
+
+          // Intervals — only available for race/sprint
+          const intervals = [];
+          if (!isNonRace && events.intervals) {
+            const intSeen = new Set();
+            for (let i = events.intervals.length - 1; i >= 0; i--) {
+              const evt = events.intervals[i];
+              if (evt.event_date <= timestamp && !intSeen.has(evt.driver_number)) {
+                intSeen.add(evt.driver_number);
+                intervals.push({ driver_number: evt.driver_number, interval: evt.interval });
+              }
+            }
+          }
+
+          // Best lap per driver up to timestamp (practice/qualifying leaderboard sorting)
+          const bestLaps = {};
+          if (events.laps && isNonRace) {
+            for (const evt of events.laps) {
+              if (evt.event_date <= timestamp && evt.lap_duration != null) {
+                const prev = bestLaps[evt.driver_number];
+                if (!prev || evt.lap_duration < prev.lap_duration) {
+                  bestLaps[evt.driver_number] = { lap_duration: evt.lap_duration, lap_number: evt.lap_number };
+                }
+              }
+            }
+          }
+
+          // Latest weather at or before timestamp
+          let weather = { rainfall: 0, air_temp: 0, track_temp: 0 };
+          for (let i = events.weather.length - 1; i >= 0; i--) {
+            const evt = events.weather[i];
+            if (evt.event_date <= timestamp) {
+              weather = { rainfall: evt.rainfall, air_temp: evt.air_temp, track_temp: evt.track_temp };
+              break;
+            }
+          }
+
+          return { positions, intervals, weather, best_laps: bestLaps };
+        },
+
+        togglePlay() {
+          if (this.playing) {
+            clearInterval(this.playInterval);
+            this.playInterval = null;
+          } else {
+            this.playInterval = setInterval(() => {
+              if (this.currentTick < this.maxTick) {
+                this.currentTick++;
+                this.applySnapshot();
+              } else {
+                this.togglePlay();
+              }
+            }, 200);
+          }
+          this.playing = !this.playing;
+        },
+
+        get currentTimeLabel() {
+          if (!this.ticks.length) return "--:--:--";
+          const ts = this.ticks[this.currentTick];
+          return ts ? utcToLocal(ts) : "--:--:--";
+        },
+
+        get visibleSummaries() {
+          if (!this.ticks.length) return [];
+          const ts = this.ticks[this.currentTick];
+          return this.allSummaries.filter(s => s.window_end <= ts).reverse();
+        }
+      };
+    }
+  </script>
+  {% endif %}
+</body>
+</html>

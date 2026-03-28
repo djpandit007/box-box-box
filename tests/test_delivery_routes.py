@@ -1,0 +1,372 @@
+from __future__ import annotations
+
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock
+
+import httpx
+import pytest
+
+from boxboxbox.delivery.app import create_app
+from boxboxbox.delivery.ws import ConnectionManager
+from boxboxbox.models import Session, Summary, SummaryType
+
+
+def _make_session_obj(key: int = 1234) -> Session:
+    s = Session()
+    s.session_key = key
+    s.session_name = "Race"
+    s.session_type = "Race"
+    s.circuit_short_name = "Monza"
+    s.country_name = "Italy"
+    s.date_start = datetime(2026, 9, 7, 13, 0)
+    s.date_end = datetime(2026, 9, 7, 15, 0)
+    return s
+
+
+def _make_summary_obj(session_key: int = 1234, text: str = "Hamilton leads.") -> Summary:
+    s = Summary()
+    s.id = 1
+    s.session_key = session_key
+    s.summary_type = SummaryType.window
+    s.window_start = datetime(2026, 9, 7, 13, 0)
+    s.window_end = datetime(2026, 9, 7, 13, 1)
+    s.prompt_text = "prompt"
+    s.summary_text = text
+    s.audio_url = None
+    s.embedding = None
+    return s
+
+
+def _make_app(db_execute_side_effects: list):
+    """Create a test app with mocked session_factory."""
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=db_execute_side_effects)
+
+    session_cm = AsyncMock()
+    session_cm.__aenter__ = AsyncMock(return_value=db)
+    session_cm.__aexit__ = AsyncMock(return_value=False)
+
+    session_factory = MagicMock(return_value=session_cm)
+    embedding_client = AsyncMock()
+    embedding_client.embed = AsyncMock(return_value=[0.1] * 2048)
+
+    manager = ConnectionManager()
+    app = create_app(session_factory, embedding_client, manager, session_key=1234)
+    return app, embedding_client
+
+
+@pytest.fixture
+def transport_for(request):
+    """Helper to create httpx.AsyncClient for a given app."""
+
+    async def _make(app):
+        return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+    return _make
+
+
+class TestSessionsRouter:
+    @pytest.mark.asyncio
+    async def test_list_sessions(self):
+        session_obj = _make_session_obj()
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = [session_obj]
+
+        app, _ = _make_app([result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["session_key"] == 1234
+        assert data[0]["circuit_short_name"] == "Monza"
+
+    @pytest.mark.asyncio
+    async def test_get_session(self):
+        session_obj = _make_session_obj()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = session_obj
+
+        app, _ = _make_app([result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/1234")
+
+        assert resp.status_code == 200
+        assert resp.json()["session_key"] == 1234
+
+    @pytest.mark.asyncio
+    async def test_get_session_not_found(self):
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+
+        app, _ = _make_app([result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/9999")
+
+        assert resp.status_code == 404
+
+
+class TestSummariesRouter:
+    @pytest.mark.asyncio
+    async def test_list_summaries_json(self):
+        summary_obj = _make_summary_obj()
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = [summary_obj]
+
+        app, _ = _make_app([result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/1234/summaries")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["summary_text"] == "Hamilton leads."
+
+    @pytest.mark.asyncio
+    async def test_list_summaries_html(self):
+        summary_obj = _make_summary_obj()
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = [summary_obj]
+
+        app, _ = _make_app([result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/1234/summaries", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        assert "Hamilton leads." in resp.text
+        assert "summary-timeline" in resp.text
+
+    @pytest.mark.asyncio
+    async def test_search_embeds_query_and_returns_results(self):
+        summary_obj = _make_summary_obj(text="Safety car deployed.")
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = [summary_obj]
+
+        app, embedding_client = _make_app([result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/1234/summaries/search?q=safety+car")
+
+        assert resp.status_code == 200
+        embedding_client.embed.assert_awaited_once_with("safety car")
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["summary_text"] == "Safety car deployed."
+
+
+class TestStandingsRouter:
+    @pytest.mark.asyncio
+    async def test_standings_returns_merged_data(self):
+        # Mock DB calls: session, drivers, positions, intervals
+        session_obj = _make_session_obj()
+        session_result = MagicMock()
+        session_result.scalar_one_or_none.return_value = session_obj
+
+        driver1 = MagicMock()
+        driver1.driver_number = 1
+        driver1.name_acronym = "VER"
+        driver1.full_name = "Max Verstappen"
+        driver1.team_name = "Red Bull"
+        driver1.team_colour = "3671C6"
+
+        driver33 = MagicMock()
+        driver33.driver_number = 33
+        driver33.name_acronym = "HAM"
+        driver33.full_name = "Lewis Hamilton"
+        driver33.team_name = "Mercedes"
+        driver33.team_colour = "27F4D2"
+
+        drivers_result = MagicMock()
+        drivers_result.scalars.return_value.all.return_value = [driver1, driver33]
+
+        pos_result = MagicMock()
+        pos_result.all.return_value = [(1, {"position": 1}), (33, {"position": 2})]
+
+        int_result = MagicMock()
+        int_result.all.return_value = [(33, {"interval": 0.8})]
+
+        app, _ = _make_app([session_result, drivers_result, pos_result, int_result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/1234/standings")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        # Sorted by position
+        assert data[0]["position"] == 1
+        assert data[0]["name_acronym"] == "VER"
+        assert data[1]["position"] == 2
+        assert data[1]["interval"] == 0.8
+        assert data[1]["name_acronym"] == "HAM"
+
+    @pytest.mark.asyncio
+    async def test_standings_practice_uses_best_laps(self):
+        session_obj = _make_session_obj()
+        session_obj.session_type = "Practice 1"
+        session_result = MagicMock()
+        session_result.scalar_one_or_none.return_value = session_obj
+
+        driver1 = MagicMock()
+        driver1.driver_number = 1
+        driver1.name_acronym = "VER"
+        driver1.full_name = "Max Verstappen"
+        driver1.team_name = "Red Bull"
+        driver1.team_colour = "3671C6"
+
+        driver33 = MagicMock()
+        driver33.driver_number = 33
+        driver33.name_acronym = "HAM"
+        driver33.full_name = "Lewis Hamilton"
+        driver33.team_name = "Mercedes"
+        driver33.team_colour = "27F4D2"
+
+        drivers_result = MagicMock()
+        drivers_result.scalars.return_value.all.return_value = [driver1, driver33]
+
+        # Laps: driver 33 has faster best lap than driver 1
+        laps_result = MagicMock()
+        laps_result.all.return_value = [
+            (33, {"lap_duration": 80.1, "lap_number": 3}),
+            (1, {"lap_duration": 80.5, "lap_number": 2}),
+            (1, {"lap_duration": None, "lap_number": 1}),  # out-lap, should be ignored
+        ]
+
+        app, _ = _make_app([session_result, drivers_result, laps_result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/1234/standings")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["position"] == 1
+        assert data[0]["name_acronym"] == "HAM"
+        assert data[0]["best_lap"] == 80.1
+        assert data[0]["gap"] == 0.0
+        assert data[1]["position"] == 2
+        assert data[1]["name_acronym"] == "VER"
+        assert data[1]["best_lap"] == 80.5
+
+
+class TestReplayRouter:
+    @pytest.mark.asyncio
+    async def test_replay_returns_grouped_events_and_summaries(self):
+        # Mock session query
+        session_obj = _make_session_obj()
+        session_result = MagicMock()
+        session_result.scalar_one_or_none.return_value = session_obj
+
+        # Mock events query — position, intervals, weather, laps, starting_grid
+        events_result = MagicMock()
+        events_result.all.return_value = [
+            ("starting_grid", 1, datetime(2026, 9, 7, 12, 0, 0), {"position": 1}),
+            ("position", 1, datetime(2026, 9, 7, 13, 0, 10), {"position": 1}),
+            ("intervals", 33, datetime(2026, 9, 7, 13, 0, 10), {"interval": 0.8}),
+            (
+                "weather",
+                None,
+                datetime(2026, 9, 7, 13, 0, 10),
+                {"rainfall": 0, "air_temperature": 22, "track_temperature": 40},
+            ),
+            ("laps", 1, datetime(2026, 9, 7, 13, 1, 0), {"lap_duration": 92.5, "lap_number": 3}),
+        ]
+
+        # Mock drivers query
+        driver1 = MagicMock()
+        driver1.driver_number = 1
+        driver1.name_acronym = "VER"
+        driver1.full_name = "Max Verstappen"
+        driver1.team_name = "Red Bull"
+        driver1.team_colour = "3671C6"
+        driver1.headshot_url = "https://example.com/ver.png"
+        drivers_result = MagicMock()
+        drivers_result.scalars.return_value.all.return_value = [driver1]
+
+        # Mock summaries query
+        summary_obj = _make_summary_obj()
+        summaries_result = MagicMock()
+        summaries_result.scalars.return_value.all.return_value = [summary_obj]
+
+        # Mock digest query
+        digest_obj = _make_summary_obj(text="Verstappen wins the race.")
+        digest_obj.summary_type = SummaryType.digest
+        digest_obj.audio_url = "/audio/digest.mp3"
+        digest_result = MagicMock()
+        digest_result.scalar_one_or_none.return_value = digest_obj
+
+        app, _ = _make_app([session_result, events_result, drivers_result, summaries_result, digest_result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/1234/replay")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_name"] == "Race"
+        assert data["session_type"] == "Race"
+        assert data["circuit_short_name"] == "Monza"
+        assert data["session_start"] == "2026-09-07T13:00:00"
+        assert data["session_end"] == "2026-09-07T15:00:00"
+        assert len(data["events"]["position"]) == 1
+        assert data["events"]["position"][0]["driver_number"] == 1
+        assert data["events"]["position"][0]["position"] == 1
+        assert len(data["events"]["intervals"]) == 1
+        assert data["events"]["intervals"][0]["interval"] == 0.8
+        assert len(data["events"]["weather"]) == 1
+        assert data["events"]["weather"][0]["rainfall"] == 0
+        assert data["events"]["weather"][0]["air_temp"] == 22
+        assert len(data["events"]["laps"]) == 1
+        assert data["events"]["laps"][0]["lap_duration"] == 92.5
+        assert data["events"]["laps"][0]["lap_number"] == 3
+        assert len(data["events"]["starting_grid"]) == 1
+        assert data["events"]["starting_grid"][0]["position"] == 1
+        # Driver metadata
+        assert "1" in data["drivers"]
+        assert data["drivers"]["1"]["name_acronym"] == "VER"
+        assert data["drivers"]["1"]["team_name"] == "Red Bull"
+        assert data["drivers"]["1"]["headshot_url"] == "https://example.com/ver.png"
+        assert len(data["summaries"]) == 1
+        assert data["summaries"][0]["summary_text"] == "Hamilton leads."
+        # Digest
+        assert data["digest"] is not None
+        assert data["digest"]["summary_text"] == "Verstappen wins the race."
+        assert data["digest"]["audio_url"] == "/audio/digest.mp3"
+
+    @pytest.mark.asyncio
+    async def test_replay_empty_session(self):
+        # Mock session query — no session found
+        session_result = MagicMock()
+        session_result.scalar_one_or_none.return_value = None
+
+        # Mock empty events
+        events_result = MagicMock()
+        events_result.all.return_value = []
+
+        # Mock empty drivers
+        drivers_result = MagicMock()
+        drivers_result.scalars.return_value.all.return_value = []
+
+        # Mock empty summaries
+        summaries_result = MagicMock()
+        summaries_result.scalars.return_value.all.return_value = []
+
+        # Mock empty digest
+        digest_result = MagicMock()
+        digest_result.scalar_one_or_none.return_value = None
+
+        app, _ = _make_app([session_result, events_result, drivers_result, summaries_result, digest_result])
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/sessions/9999/replay")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_name"] is None
+        assert data["session_type"] is None
+        assert data["circuit_short_name"] is None
+        assert data["session_start"] is None
+        assert data["session_end"] is None
+        assert data["events"]["position"] == []
+        assert data["events"]["intervals"] == []
+        assert data["events"]["weather"] == []
+        assert data["events"]["laps"] == []
+        assert data["events"]["starting_grid"] == []
+        assert data["drivers"] == {}
+        assert data["summaries"] == []
+        assert data["digest"] is None

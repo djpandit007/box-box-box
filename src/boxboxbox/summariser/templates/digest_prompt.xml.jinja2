@@ -2,7 +2,7 @@
 {% if final_standings %}
 <final_standings>
 {% for r in final_standings %}
-  {% if r.position %}P{{ r.position }}: {{ r.driver }}{% if r.gap_to_leader and r.gap_to_leader != 0 %} (+{{ r.gap_to_leader }}){% endif %}
+  {% if r.position %}P{{ r.position }}: {{ r.driver }}{% if r.gap_to_leader and r.gap_to_leader != 0 %}{% if r.gap_to_leader is iterable and r.gap_to_leader is not string %} (Q1/Q2/Q3: {{ r.gap_to_leader | join('/') }}){% else %} (+{{ r.gap_to_leader }}){% endif %}{% endif %}
   {% elif r.dnf %}DNF: {{ r.driver }}
   {% elif r.dns %}DNS: {{ r.driver }}
   {% elif r.dsq %}DSQ: {{ r.driver }}

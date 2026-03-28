@@ -110,20 +110,19 @@ box-box-box/
 
 ### Phase 4: Derived Intelligence + Delivery
 
-- [ ] WebSocket server pushing pre-rendered HTML fragments (htmx `hx-swap-oob`)
-- [ ] REST API endpoints returning Jinja2 partials (sessions, summaries, semantic search, standings)
-- [ ] Battle detector — flag when two drivers' interval drops below ~1.5s and holds; resolve via `/overtakes`
-- [ ] Weather alerts — monitor `/weather` rainfall transitions (0→1) and trigger push notifications
-- [ ] Gap delta computation — track interval changes over time (closing/opening) for leaderboard enrichment
+- [x] WebSocket server pushing pre-rendered HTML fragments (htmx `hx-swap-oob`)
+- [x] REST API endpoints returning Jinja2 partials (sessions, summaries, semantic search, standings)
+- [x] Battle detector — flag when two drivers' interval drops below ~1.5s and holds; resolve via `/overtakes`
+- [x] Weather alerts — monitor `/weather` rainfall transitions (0→1) and trigger push notifications
+- [x] Gap delta computation — track interval changes over time (closing/opening) for leaderboard enrichment
 
 ### Phase 5: Frontend (htmx + Alpine.js + Pyodide)
 
-- [ ] htmx WebSocket integration — server pushes HTML fragments for timeline, leaderboard, and race control updates
-- [ ] Jinja2 template partials — reusable components for summary card, leaderboard row, radio clip card
-- [ ] Live leaderboard with gap deltas and sparkline trend charts (Pyodide/WASM on `<canvas>`)
+- [x] htmx WebSocket integration — server pushes HTML fragments for timeline, leaderboard, and race control updates
+- [x] Jinja2 template partials — reusable components for summary card, leaderboard row, radio clip card
+- [x] Live leaderboard with gap deltas and sparkline trend charts (Pyodide/WASM on `<canvas>`)
 - [ ] Tyre strategy view — horizontal bars per driver showing compound + tyre age
-- [ ] Race control ticker — SSE-driven scrollable `/race_control` message feed
-- [ ] Team radio player — Alpine.js for audio controls, transcript expand/collapse, mood tags
+- [x] Race control ticker — SSE-driven scrollable `/race_control` message feed
 - [ ] Battle highlights in the narrative timeline
 - [ ] Driver focus mode (Alpine.js) — filter summaries, radio, and gap charts to a selected driver
 - [ ] Lazy-loading historical summaries via htmx (`hx-trigger="revealed"`)
@@ -134,7 +133,7 @@ box-box-box/
 ### Core — the reason you open the app
 
 - **Race narrative timeline** — LLM-generated summaries every 60 seconds, weaving race events into a commentator-style narrative with continuity between updates
-- **Audio commentary** — TTS conversion of each summary so you can listen instead of read
+- **Audio commentary** — TTS conversion of the race digest so you can listen as well as read!
 
 ### Essential context — always visible alongside summaries
 
@@ -144,7 +143,6 @@ box-box-box/
 
 ### Rich features — what makes this better than a text thread
 
-- **Team radio player** (`/team_radio` + STT) — card per clip with driver avatar (from `/drivers` `headshot_url`), transcript text, and a play button for the original MP3. LLM-tagged by mood/category (frustrated, celebratory, strategic, funny). Team radio is the most shared content from any race.
 - **Battle detector** (`/intervals` + `/overtakes`) — when two drivers' interval drops below ~1.5s and holds, flag it as an active battle with special visual treatment and more frequent summary triggers. `/overtakes` confirms resolution. This answers: "should I go watch this live right now?"
 - **Gap trend charts** (`/intervals` over time) — sparklines next to each driver in the leaderboard. A converging line tells you a story at a glance that no text can match. Computed client-side in Pyodide/WASM — just array math on cached interval data.
 - **Weather radar** (`/weather`) — ambient indicator (dry/damp/wet) updated every minute. Rain is F1's single biggest drama catalyst. Push notification when rainfall transitions from 0 to 1.
@@ -158,12 +156,12 @@ box-box-box/
 
 Stays within the free tier limit of 30 req/min:
 
-| Priority        | Endpoints                                 | Frequency | Requests/min |
-| --------------- | ----------------------------------------- | --------- | ------------ |
-| P1 (critical)   | `race_control`, `pit`, `overtakes`        | Every 10s | 18           |
-| P2 (important)  | `position`, `intervals`                   | Every 30s | 4            |
-| P3 (background) | `laps`, `weather`, `stints`, `team_radio` | Every 60s | 4            |
-| **Total**       |                                           |           | **~26**      |
+| Priority        | Endpoints                          | Frequency | Requests/min |
+| --------------- | ---------------------------------- | --------- | ------------ |
+| P1 (critical)   | `race_control`, `pit`, `overtakes` | Every 10s | 18           |
+| P2 (important)  | `position`, `intervals`            | Every 30s | 4            |
+| P3 (background) | `laps`, `weather`, `stints`        | Every 60s | 4            |
+| **Total**       |                                    |           | **~26**      |
 
 ## Quick Start
 
