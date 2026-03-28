@@ -86,6 +86,7 @@ async def generate_digest(
                 {
                     "position": d.get("position"),
                     "driver": name,
+                    "duration": d.get("duration"),
                     "gap_to_leader": d.get("gap_to_leader"),
                     "dnf": d.get("dnf", False),
                     "dns": d.get("dns", False),

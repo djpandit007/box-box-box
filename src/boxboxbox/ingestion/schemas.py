@@ -250,14 +250,6 @@ class StartingGridResponse(BaseModel):
     session_key: int
     driver_number: int
     position: int
-    date: datetime
-
-    @field_validator("date")
-    @classmethod
-    def _normalize_dt(cls, v: datetime) -> datetime:
-        if v.tzinfo is not None:
-            v = v.astimezone(timezone.utc).replace(tzinfo=None)
-        return v
 
 
 ENDPOINT_MODELS: dict[str, type[BaseModel]] = {
