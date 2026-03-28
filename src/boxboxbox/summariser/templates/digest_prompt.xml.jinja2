@@ -23,6 +23,24 @@
 {% endfor %}
 </final_standings>
 {% endif %}
+{% if qualifying_eliminations %}
+<qualifying_eliminations description="Drivers eliminated after each qualifying phase — always highlight these in the digest.">
+{% if qualifying_eliminations.q1 %}
+  <eliminated_after_q1>
+  {% for d in qualifying_eliminations.q1 %}
+    <driver name="{{ d.driver }}" q1_time="{{ d.q1_time | lap_time }}" />
+  {% endfor %}
+  </eliminated_after_q1>
+{% endif %}
+{% if qualifying_eliminations.q2 %}
+  <eliminated_after_q2>
+  {% for d in qualifying_eliminations.q2 %}
+    <driver name="{{ d.driver }}" q2_time="{{ d.q2_time | lap_time }}" />
+  {% endfor %}
+  </eliminated_after_q2>
+{% endif %}
+</qualifying_eliminations>
+{% endif %}
 {% for s in summaries %}
 <summary window="{{ s.window_start }}-{{ s.window_end }}">
 {{ s.text }}

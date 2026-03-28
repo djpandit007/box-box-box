@@ -250,6 +250,58 @@ def _build_template_context(
             standings_list.append(entry)
         ctx["standings"] = standings_list
 
+    # Qualifying phase results — triggered by race_control "SESSION FINISHED" events
+    # qualifying_phase=1 ended -> show Q1 eliminated drivers
+    # qualifying_phase=2 ended -> show Q2 eliminated drivers (not Q1 again)
+    # qualifying_phase=3 ended -> show top 10 from final standings
+    if session_results and "race_control" in events_by_source:
+        ended_phase: int | None = None
+        for e in events_by_source["race_control"]:
+            qp = e.get("qualifying_phase")
+            if qp is not None and "FINISHED" in (e.get("message") or "").upper():
+                ended_phase = qp
+
+        if ended_phase is not None:
+            by_position = sorted(session_results.items(), key=lambda kv: kv[1].get("position") or 999)
+
+            if ended_phase == 1:
+                eliminated = []
+                for dn, data in by_position:
+                    duration = data.get("duration")
+                    if isinstance(duration, list) and len(duration) >= 2:
+                        name = _driver_name(driver_map, dn) or f"#{dn}"
+                        if duration[0] is not None and duration[1] is None:
+                            eliminated.append({"driver": name, "q1_time": duration[0]})
+                if eliminated:
+                    ctx["qualifying_eliminations"] = {"q1": eliminated}
+
+            elif ended_phase == 2:
+                eliminated = []
+                for dn, data in by_position:
+                    duration = data.get("duration")
+                    if isinstance(duration, list) and len(duration) >= 3:
+                        name = _driver_name(driver_map, dn) or f"#{dn}"
+                        if duration[1] is not None and duration[2] is None:
+                            eliminated.append({"driver": name, "q2_time": duration[1]})
+                if eliminated:
+                    ctx["qualifying_eliminations"] = {"q2": eliminated}
+
+            elif ended_phase == 3:
+                top10 = []
+                for dn, data in by_position[:10]:
+                    name = _driver_name(driver_map, dn) or f"#{dn}"
+                    duration = data.get("duration")
+                    q3_time = duration[2] if isinstance(duration, list) and len(duration) >= 3 else None
+                    top10.append(
+                        {
+                            "position": data.get("position"),
+                            "driver": name,
+                            "q3_time": q3_time,
+                        }
+                    )
+                if top10:
+                    ctx["qualifying_top10"] = top10
+
     # Intervals — latest reading per driver
     if "intervals" in events_by_source:
         latest_intervals: dict[int, dict] = {}

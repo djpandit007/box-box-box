@@ -396,6 +396,149 @@ class TestNonRaceStandings:
         assert "standings" not in ctx
 
 
+class TestQualifyingPhaseResults:
+    def _session_results(self):
+        return {
+            6: {"position": 16, "duration": [91.5, None, None]},
+            63: {"position": 11, "duration": [89.8, 90.1, None]},
+            44: {"position": 1, "duration": [89.5, 88.9, 87.8]},
+            16: {"position": 2, "duration": [89.6, 89.0, 87.9]},
+        }
+
+    def test_q1_end_shows_only_q1_eliminated(self):
+        events = {
+            "race_control": [
+                {"date": "2026-03-15T06:18:00+00:00", "qualifying_phase": 1, "message": "SESSION FINISHED"},
+            ],
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 89.5}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 15),
+            datetime(2026, 3, 15, 6, 20),
+            session_type="Qualifying",
+            best_laps={44: 87.8, 63: 89.8, 6: 91.5, 16: 87.9},
+            session_results=self._session_results(),
+        )
+        elim = ctx["qualifying_eliminations"]
+        assert "q1" in elim
+        assert "q2" not in elim
+        assert len(elim["q1"]) == 1
+        assert elim["q1"][0]["driver"] == "Nico HULKENBERG (HUL)"
+        assert elim["q1"][0]["q1_time"] == 91.5
+
+    def test_q2_end_shows_only_q2_eliminated(self):
+        events = {
+            "race_control": [
+                {"date": "2026-03-15T06:33:00+00:00", "qualifying_phase": 2, "message": "SESSION FINISHED"},
+            ],
+            "laps": [{"driver_number": 44, "lap_number": 5, "lap_duration": 88.9}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 30),
+            datetime(2026, 3, 15, 6, 35),
+            session_type="Qualifying",
+            best_laps={44: 87.8, 63: 89.8, 6: 91.5, 16: 87.9},
+            session_results=self._session_results(),
+        )
+        elim = ctx["qualifying_eliminations"]
+        assert "q2" in elim
+        assert "q1" not in elim
+        assert len(elim["q2"]) == 1
+        assert elim["q2"][0]["driver"] == "George RUSSELL (RUS)"
+
+    def test_q3_end_shows_top10(self):
+        events = {
+            "race_control": [
+                {"date": "2026-03-15T06:48:00+00:00", "qualifying_phase": 3, "message": "SESSION FINISHED"},
+            ],
+            "laps": [{"driver_number": 44, "lap_number": 8, "lap_duration": 87.8}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 45),
+            datetime(2026, 3, 15, 6, 50),
+            session_type="Qualifying",
+            best_laps={44: 87.8, 63: 89.8, 6: 91.5, 16: 87.9},
+            session_results=self._session_results(),
+        )
+        assert "qualifying_eliminations" not in ctx
+        assert "qualifying_top10" in ctx
+        top10 = ctx["qualifying_top10"]
+        assert top10[0]["position"] == 1
+        assert top10[0]["driver"] == "Lewis HAMILTON (HAM)"
+        assert top10[0]["q3_time"] == 87.8
+        assert top10[1]["position"] == 2
+
+    def test_q1_order_preserved_by_position(self):
+        events = {
+            "race_control": [
+                {"date": "2026-03-15T06:18:00+00:00", "qualifying_phase": 1, "message": "SESSION FINISHED"},
+            ],
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 90.0}],
+        }
+        session_results = {
+            63: {"position": 17, "duration": [92.0, None, None]},
+            6: {"position": 16, "duration": [91.5, None, None]},
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 15),
+            datetime(2026, 3, 15, 6, 20),
+            session_type="Qualifying",
+            best_laps={44: 88.0, 63: 92.0, 6: 91.5},
+            session_results=session_results,
+        )
+        q1 = ctx["qualifying_eliminations"]["q1"]
+        assert q1[0]["driver"] == "Nico HULKENBERG (HUL)"  # P16
+        assert q1[1]["driver"] == "George RUSSELL (RUS)"  # P17
+
+    def test_no_eliminations_without_session_finished(self):
+        events = {
+            "race_control": [
+                {"date": "2026-03-15T06:15:00+00:00", "qualifying_phase": None, "message": "GREEN LIGHT"},
+            ],
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 90.0}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 15),
+            datetime(2026, 3, 15, 6, 20),
+            session_type="Qualifying",
+            best_laps={44: 90.0},
+            session_results=self._session_results(),
+        )
+        assert "qualifying_eliminations" not in ctx
+        assert "qualifying_top10" not in ctx
+
+    def test_no_eliminations_for_practice(self):
+        events = {
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 90.0}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Practice 1",
+            best_laps={44: 90.0},
+        )
+        assert "qualifying_eliminations" not in ctx
+        assert "qualifying_top10" not in ctx
+
+
 class TestBuildPrompt:
     @pytest.mark.asyncio
     async def test_returns_none_for_empty_window(self):

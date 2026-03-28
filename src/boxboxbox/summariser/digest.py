@@ -97,7 +97,18 @@ async def generate_digest(
                 }
             )
 
-        digest_prompt = _build_digest_prompt(summaries, session, final_standings)
+        # Derive qualifying eliminations from duration arrays (ordered by position)
+        qualifying_eliminations: dict[str, list[dict]] = {}
+        for r in final_standings:
+            dur = r.get("duration")
+            if not isinstance(dur, list) or len(dur) < 3:
+                continue
+            if dur[0] is not None and dur[1] is None:
+                qualifying_eliminations.setdefault("q1", []).append({"driver": r["driver"], "q1_time": dur[0]})
+            elif dur[1] is not None and dur[2] is None:
+                qualifying_eliminations.setdefault("q2", []).append({"driver": r["driver"], "q2_time": dur[1]})
+
+        digest_prompt = _build_digest_prompt(summaries, session, final_standings, qualifying_eliminations or None)
 
         logger.info("#" * 60)
         logger.info("POST-RACE DIGEST")
@@ -138,6 +149,7 @@ def _build_digest_prompt(
     summaries: Sequence[Summary],
     session: Session | None,
     final_standings: list[dict] | None = None,
+    qualifying_eliminations: dict[str, list[dict]] | None = None,
 ) -> str:
     """Render the digest prompt template with all race summaries."""
     template = _jinja_env.get_template("digest_prompt.xml.jinja2")
@@ -146,6 +158,7 @@ def _build_digest_prompt(
         circuit=session.circuit_short_name if session else "Unknown",
         session_type=session.session_type if session else "Race",
         final_standings=final_standings or [],
+        qualifying_eliminations=qualifying_eliminations,
         summaries=[
             {
                 "window_start": s.window_start.strftime("%H:%M:%S"),

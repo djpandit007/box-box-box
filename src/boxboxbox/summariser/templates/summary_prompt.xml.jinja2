@@ -44,6 +44,31 @@
 </standings>
 {% endif %}
 
+{% if qualifying_eliminations %}
+{% if qualifying_eliminations.q1 %}
+<eliminated_after_q1 description="Q1 has just ended. These drivers were eliminated and will not advance to Q2.">
+{% for d in qualifying_eliminations.q1 %}
+  <driver name="{{ d.driver }}" q1_time="{{ d.q1_time | lap_time }}" />
+{% endfor %}
+</eliminated_after_q1>
+{% endif %}
+{% if qualifying_eliminations.q2 %}
+<eliminated_after_q2 description="Q2 has just ended. These drivers were eliminated and will not advance to Q3.">
+{% for d in qualifying_eliminations.q2 %}
+  <driver name="{{ d.driver }}" q2_time="{{ d.q2_time | lap_time }}" />
+{% endfor %}
+</eliminated_after_q2>
+{% endif %}
+{% endif %}
+
+{% if qualifying_top10 %}
+<qualifying_final_top10 description="Q3 has just ended. These are the top 10 drivers who will form the front of the starting grid.">
+{% for d in qualifying_top10 %}
+  <driver position="{{ d.position }}" name="{{ d.driver }}" q3_time="{{ d.q3_time | lap_time }}" />
+{% endfor %}
+</qualifying_final_top10>
+{% endif %}
+
 {% if intervals %}
 <intervals time="{{ intervals.time }}">
 {% for i in intervals.gaps %}
