@@ -27,6 +27,38 @@ class TestFixtureValidation:
         assert dumped["_unknown_field"] == "test_value"
 
 
+class TestSessionResultQualifying:
+    def test_qualifying_list_duration_and_gap(self):
+        from boxboxbox.ingestion.schemas import SessionResultResponse
+
+        data = {
+            "session_key": 11245,
+            "meeting_key": 1280,
+            "driver_number": 1,
+            "position": 1,
+            "duration": [90.035, 89.048, 88.778],
+            "gap_to_leader": [0.12, 0.0, 0.0],
+        }
+        result = SessionResultResponse.model_validate(data)
+        assert result.duration == [90.035, 89.048, 88.778]
+        assert result.gap_to_leader == [0.12, 0.0, 0.0]
+
+    def test_race_scalar_duration_and_gap(self):
+        from boxboxbox.ingestion.schemas import SessionResultResponse
+
+        data = {
+            "session_key": 11245,
+            "meeting_key": 1280,
+            "driver_number": 1,
+            "position": 1,
+            "duration": 5765.432,
+            "gap_to_leader": 0.0,
+        }
+        result = SessionResultResponse.model_validate(data)
+        assert result.duration == 5765.432
+        assert result.gap_to_leader == 0.0
+
+
 class TestIntervalEdgeCases:
     def test_string_gap_to_leader(self):
         from boxboxbox.ingestion.schemas import IntervalResponse
