@@ -12,6 +12,10 @@
     .leaderboard tbody tr { transition: transform 0.3s ease; }
     .leaderboard td.driver-cell { white-space: nowrap; }
     .leaderboard td.team-cell { font-size: .85em; }
+    .eliminated { opacity: 0.4; }
+    .eliminated-tag { font-size: .7em; font-weight: 600; padding: .1rem .3rem; border-radius: 3px; }
+    .eliminated-tag-q1 { background: #fee2e2; color: #991b1b; }
+    .eliminated-tag-q2 { background: #fef3c7; color: #92400e; }
     .battle { background: #fff3cd; }
     .trend-closing { color: green; }
     .trend-opening { color: red; }
@@ -244,22 +248,24 @@ def build_leaderboard(snapshot):
     positions = {p["driver_number"]: p["position"] for p in snapshot["positions"]}
     intervals = {i["driver_number"]: i["interval"] for i in snapshot["intervals"]}
     best_laps = snapshot.get("best_laps", {})
+    elim = snapshot.get("eliminated") or {}
+    q1_out = set(elim.get("q1", []))
+    q2_out = set(elim.get("q2", []))
 
     # Find leader's best lap for gap calculation (practice/qualifying)
+    # Only consider active drivers (not eliminated) for leader lap
     _leader_lap = None
     if not is_race and best_laps:
-        durations = [v.get("lap_duration") for v in best_laps.values() if v.get("lap_duration") is not None]
-        _leader_lap = min(durations) if durations else None
+        elim_dns = set(q1_out | q2_out)
+        active_durations = [
+            v.get("lap_duration") for k, v in best_laps.items()
+            if v.get("lap_duration") is not None and int(k) not in elim_dns and k not in elim_dns
+        ]
+        _leader_lap = min(active_durations) if active_durations else None
 
-    # Sort: race by position, practice/qualifying by fastest lap (no time = bottom)
-    if is_race:
-        sorted_drivers = sorted(positions, key=lambda d: positions[d])
-    else:
-        def lap_sort_key(d):
-            info = _get_lap_info(best_laps, d)
-            dur = info.get("lap_duration") if info else None
-            return (0, dur) if dur is not None else (1, 0)
-        sorted_drivers = sorted(positions, key=lap_sort_key)
+    # Sort by assigned position (server already handles ordering:
+    # race by position events, practice/qualifying by best lap with eliminated pinned at bottom)
+    sorted_drivers = sorted(positions, key=lambda d: positions[d])
 
     tbody = document.getElementById("leaderboard-body")
     existing = {}
@@ -280,6 +286,16 @@ def build_leaderboard(snapshot):
         img_html = f"<img src='{headshot}' width='24' height='24' style='border-radius:50%;vertical-align:middle;margin-right:4px'>" if headshot else ""
         team_dot = f"<span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#{colour};margin-right:6px;vertical-align:middle'></span>"
 
+        # Determine elimination status
+        elim_class = ""
+        elim_tag = ""
+        if driver_number in q1_out or int(key) in q1_out:
+            elim_class = "eliminated"
+            elim_tag = " <span class='eliminated-tag eliminated-tag-q1'>OUT Q1</span>"
+        elif driver_number in q2_out or int(key) in q2_out:
+            elim_class = "eliminated"
+            elim_tag = " <span class='eliminated-tag eliminated-tag-q2'>OUT Q2</span>"
+
         if is_race:
             col4 = f"{interval:.3f}" if interval is not None else ""
             col5_class = "trend trend-stable"
@@ -296,21 +312,23 @@ def build_leaderboard(snapshot):
 
         if key in existing:
             tr = existing[key]
+            tr.className = elim_class
             cells = tr.querySelectorAll("td")
             if cells.length >= 5:
                 cells[0].textContent = str(pos)
                 cells[3].textContent = col4
                 cells[4].className = col5_class
-                cells[4].textContent = col5_text
+                cells[4].innerHTML = elim_tag if elim_tag else col5_text
         else:
             tr = document.createElement("tr")
             tr.setAttribute("data-driver", key)
+            tr.className = elim_class
             if is_race:
                 col4_html = f"<td class='interval'>{col4}</td>"
                 col5_html = f"<td class='{col5_class}'>{col5_text}</td>"
             else:
                 col4_html = f"<td class='interval' style='font-family:monospace'>{col4}</td>"
-                col5_html = f"<td class='{col5_class}' style='font-family:monospace'>{col5_text}</td>"
+                col5_html = f"<td class='{col5_class}' style='font-family:monospace'>{elim_tag if elim_tag else col5_text}</td>"
             tr.innerHTML = (
                 f"<td>{pos}</td>"
                 f"<td class='driver-cell'>{img_html}{name} <span style='color:#999;font-size:.8em'>#{driver_number}</span></td>"
@@ -522,21 +540,77 @@ def process_snapshot(snapshot):
           const st = this.replayData.session_type || "";
           const isNonRace = st !== "Race" && st !== "Sprint";
 
-          // Latest position per driver at or before timestamp (all session types)
-          const positions = [];
-          const posSeen = new Set();
-          for (let i = events.position.length - 1; i >= 0; i--) {
-            const evt = events.position[i];
-            if (evt.event_date <= timestamp && !posSeen.has(evt.driver_number)) {
-              posSeen.add(evt.driver_number);
-              positions.push({ driver_number: evt.driver_number, position: evt.position });
+          // Best lap per driver up to timestamp (practice/qualifying leaderboard sorting)
+          // For qualifying, only consider laps from the current phase
+          const bestLaps = {};
+          if (events.laps && isNonRace) {
+            let phaseStart = null;
+            const boundaries = this.replayData.phase_boundaries || [];
+            for (const b of boundaries) {
+              if (b <= timestamp) phaseStart = b;
+            }
+            for (const evt of events.laps) {
+              if (evt.event_date <= timestamp && evt.lap_duration != null) {
+                if (phaseStart && evt.event_date < phaseStart) continue;
+                const prev = bestLaps[evt.driver_number];
+                if (!prev || evt.lap_duration < prev.lap_duration) {
+                  bestLaps[evt.driver_number] = { lap_duration: evt.lap_duration, lap_number: evt.lap_number };
+                }
+              }
             }
           }
 
-          // Race with no positions yet: fall back to starting grid
-          if (!positions.length && !isNonRace && events.starting_grid) {
-            for (const g of events.starting_grid) {
-              positions.push({ driver_number: g.driver_number, position: g.position });
+          // Positions
+          const positions = [];
+          if (isNonRace) {
+            // Derive positions from best lap ranking
+            const sorted = Object.entries(bestLaps)
+              .sort((a, b) => a[1].lap_duration - b[1].lap_duration);
+            sorted.forEach(([dn, _], idx) => {
+              positions.push({ driver_number: Number(dn), position: idx + 1 });
+            });
+            // Active drivers with no time in this phase
+            const active = new Set(Object.keys(bestLaps).map(Number));
+            const elim = this.replayData.eliminated || {};
+            const srt = this.replayData.session_result_times || {};
+            const boundaries = this.replayData.phase_boundaries || [];
+            // Collect eliminated drivers — only after their phase has ended
+            // Q1 eliminated: visible after Q1 ends (boundary[0])
+            // Q2 eliminated: visible after Q2 ends (boundary[1])
+            const q1Out = (boundaries.length >= 1 && boundaries[0] <= timestamp) ? (elim.q1 || []) : [];
+            const q2Out = (boundaries.length >= 2 && boundaries[1] <= timestamp) ? (elim.q2 || []) : [];
+            // Mark eliminated as accounted for
+            for (const dn of [...q2Out, ...q1Out]) active.add(dn);
+            // No-time active drivers
+            for (const dn of Object.keys(this.replayData.drivers)) {
+              if (!active.has(Number(dn))) {
+                positions.push({ driver_number: Number(dn), position: positions.length + 1 });
+              }
+            }
+            // Q2 eliminated block, then Q1 eliminated block — sequential positions
+            for (const dn of q2Out) {
+              positions.push({ driver_number: dn, position: positions.length + 1 });
+              if (srt[dn] != null) bestLaps[dn] = { lap_duration: srt[dn], lap_number: null };
+            }
+            for (const dn of q1Out) {
+              positions.push({ driver_number: dn, position: positions.length + 1 });
+              if (srt[dn] != null) bestLaps[dn] = { lap_duration: srt[dn], lap_number: null };
+            }
+          } else {
+            // Race/sprint: use position events
+            const posSeen = new Set();
+            for (let i = events.position.length - 1; i >= 0; i--) {
+              const evt = events.position[i];
+              if (evt.event_date <= timestamp && !posSeen.has(evt.driver_number)) {
+                posSeen.add(evt.driver_number);
+                positions.push({ driver_number: evt.driver_number, position: evt.position });
+              }
+            }
+            // Fall back to starting grid if no position events yet
+            if (!positions.length && events.starting_grid) {
+              for (const g of events.starting_grid) {
+                positions.push({ driver_number: g.driver_number, position: g.position });
+              }
             }
           }
 
@@ -553,19 +627,6 @@ def process_snapshot(snapshot):
             }
           }
 
-          // Best lap per driver up to timestamp (practice/qualifying leaderboard sorting)
-          const bestLaps = {};
-          if (events.laps && isNonRace) {
-            for (const evt of events.laps) {
-              if (evt.event_date <= timestamp && evt.lap_duration != null) {
-                const prev = bestLaps[evt.driver_number];
-                if (!prev || evt.lap_duration < prev.lap_duration) {
-                  bestLaps[evt.driver_number] = { lap_duration: evt.lap_duration, lap_number: evt.lap_number };
-                }
-              }
-            }
-          }
-
           // Latest weather at or before timestamp
           let weather = { rainfall: 0, air_temp: 0, track_temp: 0 };
           for (let i = events.weather.length - 1; i >= 0; i--) {
@@ -576,7 +637,19 @@ def process_snapshot(snapshot):
             }
           }
 
-          return { positions, intervals, weather, best_laps: bestLaps };
+          // For qualifying, include elimination status based on passed phase boundaries
+          const eliminated = {};
+          const boundaries = this.replayData.phase_boundaries || [];
+          const elim = this.replayData.eliminated || {};
+          // After Q1 boundary passed, include q1 eliminated; after Q2, include q2
+          if (boundaries.length >= 1 && boundaries[0] <= timestamp && elim.q1) {
+            eliminated.q1 = elim.q1;
+          }
+          if (boundaries.length >= 2 && boundaries[1] <= timestamp && elim.q2) {
+            eliminated.q2 = elim.q2;
+          }
+
+          return { positions, intervals, weather, best_laps: bestLaps, eliminated };
         },
 
         togglePlay() {

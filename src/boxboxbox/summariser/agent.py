@@ -95,8 +95,10 @@ The session_type and optional final_standings in the prompt tell you what kind o
   sign-off; replace the second-to-last and final lines with reflections on tyre performance and
   what the times suggest for race pace.
 - **Qualifying**: focus on who took pole, key elimination moments, and grid order. When
-  final_standings are provided, use them as the authoritative qualifying order. End naming the
-  pole-sitter.
+  final_standings are provided, use them as the authoritative qualifying order. You MUST
+  separately mention which drivers were eliminated after Q1 and which were eliminated after Q2
+  (use the qualifying_eliminations data). Cover the full session story: Q1 eliminations, Q2
+  eliminations, then the Q3 shootout for pole. End naming the pole-sitter.
 """
 
 

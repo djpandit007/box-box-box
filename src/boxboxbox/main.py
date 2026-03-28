@@ -12,7 +12,7 @@ from boxboxbox.delivery.app import WEB_HOST, WEB_PORT, create_app
 from boxboxbox.delivery.ws import SNAPSHOT_INTERVAL_SECONDS, ConnectionManager
 from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.ingestion.poller import Poller
-from boxboxbox.models import RaceEvent, Summary, SummaryType
+from boxboxbox.models import Driver, RaceEvent, Summary, SummaryType
 from boxboxbox.summariser.agent import create_digest_agent, create_summary_agent
 from boxboxbox.summariser.digest import generate_digest
 from boxboxbox.summariser.embeddings import EmbeddingClient
@@ -46,34 +46,120 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
     while True:
         try:
             async with session_factory() as db:
-                # Latest position per driver (all session types)
-                pos_subq = (
-                    select(RaceEvent.driver_number, func.max(RaceEvent.event_date).label("max_date"))
-                    .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
-                    .group_by(RaceEvent.driver_number)
-                    .subquery()
-                )
-                pos_result = await db.execute(
-                    select(RaceEvent.driver_number, RaceEvent.data)
-                    .join(
-                        pos_subq,
-                        (RaceEvent.driver_number == pos_subq.c.driver_number)
-                        & (RaceEvent.event_date == pos_subq.c.max_date),
-                    )
-                    .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
-                )
-                positions = [{"driver_number": row[0], "position": row[1].get("position")} for row in pos_result.all()]
-
-                # Race with no positions yet: fall back to starting grid
-                if not positions and not non_race:
-                    grid_result = await db.execute(
-                        select(RaceEvent.driver_number, RaceEvent.data).where(
-                            RaceEvent.session_key == session_key, RaceEvent.source == "starting_grid"
+                # Best laps — computed first for non-race so positions can be derived from them
+                # For qualifying, only consider laps from the current phase
+                best_laps: dict[int, dict] = {}
+                if non_race:
+                    laps_conditions = [
+                        RaceEvent.session_key == session_key,
+                        RaceEvent.source == "laps",
+                    ]
+                    # For qualifying, find when the current phase started and reset laps
+                    if "Qualifying" in session_type:
+                        phase_result = await db.execute(
+                            select(RaceEvent.event_date, RaceEvent.data)
+                            .where(
+                                RaceEvent.session_key == session_key,
+                                RaceEvent.source == "race_control",
+                            )
+                            .order_by(RaceEvent.event_date.desc())
                         )
+                        for event_date, data in phase_result.all():
+                            qp = data.get("qualifying_phase")
+                            msg = (data.get("message") or "").upper()
+                            if qp is not None and "FINISHED" in msg:
+                                laps_conditions.append(RaceEvent.event_date >= event_date)
+                                break
+
+                    laps_result = await db.execute(
+                        select(RaceEvent.driver_number, RaceEvent.data).where(*laps_conditions)
+                    )
+                    for driver_number, data in laps_result.all():
+                        dur = data.get("lap_duration")
+                        if dur is None:
+                            continue
+                        existing = best_laps.get(driver_number)
+                        if existing is None or dur < existing["lap_duration"]:
+                            best_laps[driver_number] = {
+                                "lap_duration": dur,
+                                "lap_number": data.get("lap_number"),
+                            }
+
+                # Positions
+                positions: list[dict] = []
+                if non_race:
+                    # Derive positions from best lap ranking (current phase only)
+                    sorted_drivers = sorted(best_laps, key=lambda d: best_laps[d]["lap_duration"])
+                    positions = [{"driver_number": dn, "position": idx} for idx, dn in enumerate(sorted_drivers, 1)]
+                    # Active drivers with no time in this phase
+                    driver_result = await db.execute(
+                        select(Driver.driver_number).where(Driver.session_key == session_key)
+                    )
+                    all_drivers = {row[0] for row in driver_result.all()}
+                    active = set(best_laps)
+
+                    # For qualifying, group eliminated drivers and pin below active
+                    q2_eliminated: list[tuple[int, float | None]] = []
+                    q1_eliminated: list[tuple[int, float | None]] = []
+                    if "Qualifying" in session_type:
+                        sr_result = await db.execute(
+                            select(RaceEvent.driver_number, RaceEvent.data).where(
+                                RaceEvent.session_key == session_key,
+                                RaceEvent.source == "session_result",
+                            )
+                        )
+                        for dn, data in sr_result.all():
+                            if dn in active or dn is None:
+                                continue
+                            dur = data.get("duration")
+                            if not isinstance(dur, list) or len(dur) < 3:
+                                continue
+                            if dur[1] is not None and dur[2] is None:
+                                q2_eliminated.append((dn, dur[1]))
+                                active.add(dn)
+                            elif dur[0] is not None and dur[1] is None:
+                                q1_eliminated.append((dn, dur[0]))
+                                active.add(dn)
+
+                    # No-time active drivers
+                    no_time = all_drivers - active
+                    for dn in no_time:
+                        positions.append({"driver_number": dn, "position": len(positions) + 1})
+
+                    # Q2 eliminated block, then Q1 eliminated block
+                    for group in (q2_eliminated, q1_eliminated):
+                        for dn, lap_time in group:
+                            positions.append({"driver_number": dn, "position": len(positions) + 1})
+                else:
+                    pos_subq = (
+                        select(RaceEvent.driver_number, func.max(RaceEvent.event_date).label("max_date"))
+                        .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
+                        .group_by(RaceEvent.driver_number)
+                        .subquery()
+                    )
+                    pos_result = await db.execute(
+                        select(RaceEvent.driver_number, RaceEvent.data)
+                        .join(
+                            pos_subq,
+                            (RaceEvent.driver_number == pos_subq.c.driver_number)
+                            & (RaceEvent.event_date == pos_subq.c.max_date),
+                        )
+                        .where(RaceEvent.session_key == session_key, RaceEvent.source == "position")
                     )
                     positions = [
-                        {"driver_number": row[0], "position": row[1].get("position")} for row in grid_result.all()
+                        {"driver_number": row[0], "position": row[1].get("position")} for row in pos_result.all()
                     ]
+
+                    # Race with no positions yet: fall back to starting grid
+                    if not positions:
+                        grid_result = await db.execute(
+                            select(RaceEvent.driver_number, RaceEvent.data).where(
+                                RaceEvent.session_key == session_key, RaceEvent.source == "starting_grid"
+                            )
+                        )
+                        positions = [
+                            {"driver_number": row[0], "position": row[1].get("position")} for row in grid_result.all()
+                        ]
 
                 # Intervals — only available for race/sprint
                 intervals: list[dict] = []
@@ -97,25 +183,6 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
                         {"driver_number": row[0], "interval": row[1].get("interval")} for row in int_result.all()
                     ]
 
-                # Best laps — sent for practice/qualifying (frontend sorts by this)
-                best_laps: dict[int, dict] = {}
-                if non_race:
-                    laps_result = await db.execute(
-                        select(RaceEvent.driver_number, RaceEvent.data).where(
-                            RaceEvent.session_key == session_key, RaceEvent.source == "laps"
-                        )
-                    )
-                    for driver_number, data in laps_result.all():
-                        dur = data.get("lap_duration")
-                        if dur is None:
-                            continue
-                        existing = best_laps.get(driver_number)
-                        if existing is None or dur < existing["lap_duration"]:
-                            best_laps[driver_number] = {
-                                "lap_duration": dur,
-                                "lap_number": data.get("lap_number"),
-                            }
-
                 # Latest weather reading
                 weather_result = await db.execute(
                     select(RaceEvent.data)
@@ -134,10 +201,36 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
                     else {"rainfall": 0, "air_temp": 0, "track_temp": 0}
                 )
 
+                # Include eliminated drivers' lap times in best_laps for display
+                if non_race and "Qualifying" in session_type:
+                    for group in (q2_eliminated, q1_eliminated):
+                        for dn, lap_time in group:
+                            if lap_time is not None:
+                                best_laps[dn] = {"lap_duration": lap_time, "lap_number": None}
+
             if positions:
                 payload: dict = {"positions": positions, "intervals": intervals, "weather": weather}
                 if non_race and best_laps:
                     payload["best_laps"] = {str(k): v for k, v in best_laps.items()}
+                # For qualifying, include elimination status per driver
+                if non_race and "Qualifying" in session_type:
+                    sr_result = await db.execute(
+                        select(RaceEvent.driver_number, RaceEvent.data).where(
+                            RaceEvent.session_key == session_key,
+                            RaceEvent.source == "session_result",
+                        )
+                    )
+                    eliminated: dict[str, list[int]] = {}
+                    for dn, data in sr_result.all():
+                        dur = data.get("duration")
+                        if not isinstance(dur, list) or len(dur) < 3 or dn is None:
+                            continue
+                        if dur[0] is not None and dur[1] is None:
+                            eliminated.setdefault("q1", []).append(dn)
+                        elif dur[1] is not None and dur[2] is None:
+                            eliminated.setdefault("q2", []).append(dn)
+                    if eliminated:
+                        payload["eliminated"] = eliminated
                 await manager.broadcast_json(payload)
         except asyncio.CancelledError:
             return

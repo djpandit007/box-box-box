@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from boxboxbox.ingestion.client import OpenF1Client
-from boxboxbox.ingestion.endpoints import ENDPOINTS, EndpointConfig, Priority
+from boxboxbox.ingestion.endpoints import ENDPOINTS, EndpointConfig, Priority, is_non_race_session
 from boxboxbox.ingestion.schemas import ENDPOINT_MODELS, DriverResponse, SessionResponse
 from boxboxbox.models import Driver, RaceEvent, RadioTranscript, Session
 
@@ -99,6 +99,8 @@ class Poller:
         await asyncio.gather(*(self._fetch_and_store(ep) for ep in endpoints))
 
     def _should_poll(self, endpoint: EndpointConfig) -> bool:
+        if endpoint.race_only and self._initialized and is_non_race_session(self.session_info.session_type):
+            return False
         if endpoint.priority == Priority.P1:
             return True
         if endpoint.priority == Priority.P2:
@@ -146,8 +148,8 @@ class Poller:
         async with self._session_factory() as db:
             if endpoint.name == "team_radio":
                 await self._store_radio(db, records)
-            elif endpoint.name == "session_result":
-                await self._store_session_result(db, records)
+            elif endpoint.name in ("session_result", "starting_grid"):
+                await self._store_dateless_events(db, endpoint.name, records)
             else:
                 await self._store_events(db, endpoint.name, records)
             await db.commit()
@@ -202,13 +204,13 @@ class Poller:
             )
             await db.execute(stmt)
 
-    async def _store_session_result(self, db, records: list[dict]) -> None:
+    async def _store_dateless_events(self, db, source: str, records: list[dict]) -> None:
         session_date = self.session_info.date_start
         for r in records:
             data_hash = OpenF1Client.hash_event(r)
             stmt = pg_insert(RaceEvent).values(
                 session_key=self._session_key,
-                source="session_result",
+                source=source,
                 driver_number=r.get("driver_number"),
                 lap_number=None,
                 event_date=session_date,
@@ -229,7 +231,9 @@ class Poller:
     async def ingest_all(self) -> None:
         """One-shot fetch of all endpoints for the session (ignores priority tiers)."""
         logger.info("Ingesting all data for session %s", self._session_key)
-        await asyncio.gather(*(self._fetch_and_store(ep) for ep in ENDPOINTS))
+        non_race = is_non_race_session(self.session_info.session_type)
+        eps = [ep for ep in ENDPOINTS if not (ep.race_only and non_race)]
+        await asyncio.gather(*(self._fetch_and_store(ep) for ep in eps))
 
     async def run(self, poll_interval: int = 10) -> None:
         if not self._initialized:

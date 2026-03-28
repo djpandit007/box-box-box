@@ -7,6 +7,7 @@ from boxboxbox.models import Driver, RaceEvent
 from boxboxbox.summariser.prompt import (
     _build_template_context,
     _driver_name,
+    _format_lap_time,
     _format_time,
     _sort_gap,
     build_prompt,
@@ -33,7 +34,7 @@ DRIVER_MAP = {
 
 class TestDriverName:
     def test_known_driver(self):
-        assert _driver_name(DRIVER_MAP, 44) == "Lewis HAMILTON (HAM)"
+        assert _driver_name(DRIVER_MAP, 44) == "Lewis HAMILTON (HAM, Ferrari)"
 
     def test_unknown_driver(self):
         assert _driver_name(DRIVER_MAP, 999) == "#999"
@@ -97,7 +98,7 @@ class TestBuildTemplateContext:
         ctx = _build_template_context(
             events, DRIVER_MAP, None, datetime(2026, 3, 15, 6, 20), datetime(2026, 3, 15, 6, 21)
         )
-        assert ctx["race_control"][0]["driver"] == "Lewis HAMILTON (HAM)"
+        assert ctx["race_control"][0]["driver"] == "Lewis HAMILTON (HAM, Ferrari)"
 
     def test_overtakes_both_drivers_resolved(self):
         events = {
@@ -113,8 +114,8 @@ class TestBuildTemplateContext:
         ctx = _build_template_context(
             events, DRIVER_MAP, None, datetime(2026, 3, 15, 7, 4), datetime(2026, 3, 15, 7, 5)
         )
-        assert ctx["overtakes"][0]["overtaking_driver"] == "Lewis HAMILTON (HAM)"
-        assert ctx["overtakes"][0]["overtaken_driver"] == "George RUSSELL (RUS)"
+        assert ctx["overtakes"][0]["overtaking_driver"] == "Lewis HAMILTON (HAM, Ferrari)"
+        assert ctx["overtakes"][0]["overtaken_driver"] == "George RUSSELL (RUS, Mercedes)"
 
     def test_pit_stops(self):
         events = {
@@ -131,7 +132,7 @@ class TestBuildTemplateContext:
         ctx = _build_template_context(
             events, DRIVER_MAP, None, datetime(2026, 3, 15, 7, 6), datetime(2026, 3, 15, 7, 7)
         )
-        assert ctx["pit_stops"][0]["driver"] == "Nico HULKENBERG (HUL)"
+        assert ctx["pit_stops"][0]["driver"] == "Nico HULKENBERG (HUL, Sauber)"
         assert ctx["pit_stops"][0]["stop_duration"] == 2.7
 
     def test_position_snapshot_deduplication(self):
@@ -152,9 +153,9 @@ class TestBuildTemplateContext:
         # Should have 3 drivers (deduplicated), with latest positions
         assert len(standings) == 3
         assert standings[0]["position"] == 1
-        assert standings[0]["driver"] == "Andrea Kimi ANTONELLI (ANT)"
+        assert standings[0]["driver"] == "Andrea Kimi ANTONELLI (ANT, Mercedes)"
         assert standings[1]["position"] == 2
-        assert standings[1]["driver"] == "Lewis HAMILTON (HAM)"
+        assert standings[1]["driver"] == "Lewis HAMILTON (HAM, Ferrari)"
 
     def test_intervals_with_lapped_car(self):
         events = {
@@ -231,7 +232,7 @@ class TestBuildTemplateContext:
             events, DRIVER_MAP, None, datetime(2026, 3, 15, 6, 0), datetime(2026, 3, 15, 6, 5)
         )
         assert ctx["stints"][0]["compound"] == "SOFT"
-        assert ctx["stints"][0]["driver"] == "Nico HULKENBERG (HUL)"
+        assert ctx["stints"][0]["driver"] == "Nico HULKENBERG (HUL, Sauber)"
 
     def test_previous_summary_included(self):
         ctx = _build_template_context(
@@ -284,6 +285,286 @@ class TestBuildTemplateContext:
         assert "intervals" not in ctx
         assert "lap_times" in ctx
         assert len(ctx["lap_times"]) == 2
+
+
+class TestFormatLapTime:
+    def test_under_one_minute(self):
+        assert _format_lap_time(58.456) == "0:58.456"
+
+    def test_over_one_minute(self):
+        assert _format_lap_time(88.456) == "1:28.456"
+
+    def test_exact_minute(self):
+        assert _format_lap_time(60.0) == "1:00.000"
+
+    def test_none(self):
+        assert _format_lap_time(None) == "N/A"
+
+    def test_long_time(self):
+        # Race total time: 5765.432s = 96:05.432
+        assert _format_lap_time(5765.432) == "96:05.432"
+
+
+class TestNonRaceStandings:
+    def test_practice_standings_sorted_by_best_lap(self):
+        events = {
+            "laps": [
+                {"driver_number": 44, "lap_number": 5, "lap_duration": 80.5},
+                {"driver_number": 63, "lap_number": 3, "lap_duration": 79.8},
+            ],
+        }
+        best_laps = {44: 80.5, 63: 79.8}
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Practice 1",
+            best_laps=best_laps,
+        )
+        assert "standings" in ctx
+        assert "positions" not in ctx
+        assert ctx["standings"][0]["driver"] == "George RUSSELL (RUS, Mercedes)"
+        assert ctx["standings"][0]["best_lap"] == 79.8
+        assert ctx["standings"][0]["gap"] == 0.0
+        assert ctx["standings"][1]["driver"] == "Lewis HAMILTON (HAM, Ferrari)"
+        assert ctx["standings"][1]["gap"] == pytest.approx(0.7)
+
+    def test_qualifying_standings_no_q_times(self):
+        """q_times should not leak into standings — only shown when phase ends."""
+        events = {
+            "laps": [{"driver_number": 44, "lap_number": 5, "lap_duration": 88.5}],
+        }
+        best_laps = {44: 88.5, 63: 87.9}
+        session_results = {
+            44: {"duration": [90.1, 89.2, 88.5]},
+            63: {"duration": [89.6, 88.9, 87.9]},
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Qualifying",
+            best_laps=best_laps,
+            session_results=session_results,
+        )
+        for s in ctx["standings"]:
+            assert "q_times" not in s
+
+    def test_qualifying_phase_passed_to_context(self):
+        events = {
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 90.0}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Qualifying",
+            best_laps={44: 90.0},
+            qualifying_phase=2,
+        )
+        assert ctx["qualifying_phase"] == "Q2"
+
+    def test_no_significant_data_flag(self):
+        events = {
+            "weather": [
+                {
+                    "date": "2026-03-15T06:20:00+00:00",
+                    "air_temperature": 30.0,
+                    "track_temperature": 45.0,
+                    "humidity": 40.0,
+                    "wind_speed": 3.0,
+                    "wind_direction": 180,
+                    "rainfall": 0,
+                },
+            ],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Qualifying",
+        )
+        assert ctx["no_significant_data"] is True
+
+    def test_no_significant_data_not_set_with_laps(self):
+        events = {
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 90.0}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Qualifying",
+            best_laps={44: 90.0},
+        )
+        assert "no_significant_data" not in ctx
+
+    def test_no_standings_without_best_laps(self):
+        events = {
+            "race_control": [{"date": "2026-03-15T06:20:01+00:00", "message": "test"}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Practice 1",
+        )
+        assert "standings" not in ctx
+
+
+class TestQualifyingPhaseResults:
+    def _session_results(self):
+        return {
+            6: {"position": 16, "duration": [91.5, None, None]},
+            63: {"position": 11, "duration": [89.8, 90.1, None]},
+            44: {"position": 1, "duration": [89.5, 88.9, 87.8]},
+            16: {"position": 2, "duration": [89.6, 89.0, 87.9]},
+        }
+
+    def test_q1_end_shows_only_q1_eliminated(self):
+        events = {
+            "race_control": [
+                {"date": "2026-03-15T06:18:00+00:00", "qualifying_phase": 1, "message": "SESSION FINISHED"},
+            ],
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 89.5}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 15),
+            datetime(2026, 3, 15, 6, 20),
+            session_type="Qualifying",
+            best_laps={44: 87.8, 63: 89.8, 6: 91.5, 16: 87.9},
+            session_results=self._session_results(),
+        )
+        elim = ctx["qualifying_eliminations"]
+        assert "q1" in elim
+        assert "q2" not in elim
+        assert len(elim["q1"]) == 1
+        assert elim["q1"][0]["driver"] == "Nico HULKENBERG (HUL, Sauber)"
+        assert elim["q1"][0]["q1_time"] == 91.5
+
+    def test_q2_end_shows_only_q2_eliminated(self):
+        events = {
+            "race_control": [
+                {"date": "2026-03-15T06:33:00+00:00", "qualifying_phase": 2, "message": "SESSION FINISHED"},
+            ],
+            "laps": [{"driver_number": 44, "lap_number": 5, "lap_duration": 88.9}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 30),
+            datetime(2026, 3, 15, 6, 35),
+            session_type="Qualifying",
+            best_laps={44: 87.8, 63: 89.8, 6: 91.5, 16: 87.9},
+            session_results=self._session_results(),
+        )
+        elim = ctx["qualifying_eliminations"]
+        assert "q2" in elim
+        assert "q1" not in elim
+        assert len(elim["q2"]) == 1
+        assert elim["q2"][0]["driver"] == "George RUSSELL (RUS, Mercedes)"
+
+    def test_q3_end_shows_top10(self):
+        events = {
+            "race_control": [
+                {"date": "2026-03-15T06:48:00+00:00", "qualifying_phase": 3, "message": "SESSION FINISHED"},
+            ],
+            "laps": [{"driver_number": 44, "lap_number": 8, "lap_duration": 87.8}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 45),
+            datetime(2026, 3, 15, 6, 50),
+            session_type="Qualifying",
+            best_laps={44: 87.8, 63: 89.8, 6: 91.5, 16: 87.9},
+            session_results=self._session_results(),
+        )
+        assert "qualifying_eliminations" not in ctx
+        assert "qualifying_top10" in ctx
+        top10 = ctx["qualifying_top10"]
+        assert top10[0]["position"] == 1
+        assert top10[0]["driver"] == "Lewis HAMILTON (HAM, Ferrari)"
+        assert top10[0]["q3_time"] == 87.8
+        assert top10[1]["position"] == 2
+
+    def test_q1_order_preserved_by_position(self):
+        events = {
+            "race_control": [
+                {"date": "2026-03-15T06:18:00+00:00", "qualifying_phase": 1, "message": "SESSION FINISHED"},
+            ],
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 90.0}],
+        }
+        session_results = {
+            63: {"position": 17, "duration": [92.0, None, None]},
+            6: {"position": 16, "duration": [91.5, None, None]},
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 15),
+            datetime(2026, 3, 15, 6, 20),
+            session_type="Qualifying",
+            best_laps={44: 88.0, 63: 92.0, 6: 91.5},
+            session_results=session_results,
+        )
+        q1 = ctx["qualifying_eliminations"]["q1"]
+        assert q1[0]["driver"] == "Nico HULKENBERG (HUL, Sauber)"  # P16
+        assert q1[1]["driver"] == "George RUSSELL (RUS, Mercedes)"  # P17
+
+    def test_no_eliminations_without_session_finished(self):
+        events = {
+            "race_control": [
+                {"date": "2026-03-15T06:15:00+00:00", "qualifying_phase": None, "message": "GREEN LIGHT"},
+            ],
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 90.0}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 15),
+            datetime(2026, 3, 15, 6, 20),
+            session_type="Qualifying",
+            best_laps={44: 90.0},
+            session_results=self._session_results(),
+        )
+        assert "qualifying_eliminations" not in ctx
+        assert "qualifying_top10" not in ctx
+
+    def test_no_eliminations_for_practice(self):
+        events = {
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 90.0}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Practice 1",
+            best_laps={44: 90.0},
+        )
+        assert "qualifying_eliminations" not in ctx
+        assert "qualifying_top10" not in ctx
 
 
 class TestBuildPrompt:

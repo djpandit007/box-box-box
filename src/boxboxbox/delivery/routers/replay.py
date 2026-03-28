@@ -29,9 +29,9 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
 
         # All event sources — intervals and starting_grid only exist for race/sprint
         non_race = is_non_race_session(session.session_type) if session else False
-        sources = ["position", "weather", "laps"]
+        sources = ["weather", "laps"]
         if not non_race:
-            sources += ["intervals", "starting_grid"]
+            sources += ["position", "intervals", "starting_grid"]
 
         events_result = await db.execute(
             select(RaceEvent.source, RaceEvent.driver_number, RaceEvent.event_date, RaceEvent.data)
@@ -139,18 +139,64 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
             else None
         )
 
+        # For qualifying, compute phase boundary timestamps and elimination status
+        phase_boundaries: list[str] = []
+        eliminated: dict[str, list[int]] = {}
+        session_result_positions: dict[int, int] = {}
+        session_result_times: dict[int, float] = {}
+        if non_race and session and "Qualifying" in session.session_type:
+            rc_result = await db.execute(
+                select(RaceEvent.event_date, RaceEvent.data)
+                .where(
+                    RaceEvent.session_key == session_key,
+                    RaceEvent.source == "race_control",
+                )
+                .order_by(RaceEvent.event_date)
+            )
+            for event_date, data in rc_result.all():
+                qp = data.get("qualifying_phase")
+                msg = (data.get("message") or "").upper()
+                if qp is not None and "FINISHED" in msg:
+                    phase_boundaries.append(event_date.isoformat())
+
+            sr_result = await db.execute(
+                select(RaceEvent.driver_number, RaceEvent.data).where(
+                    RaceEvent.session_key == session_key,
+                    RaceEvent.source == "session_result",
+                )
+            )
+            for dn, data in sr_result.all():
+                if dn is None:
+                    continue
+                final_pos = data.get("position")
+                if final_pos is not None:
+                    session_result_positions[dn] = final_pos
+                dur = data.get("duration")
+                if not isinstance(dur, list) or len(dur) < 3:
+                    continue
+                if dur[0] is not None and dur[1] is None:
+                    eliminated.setdefault("q1", []).append(dn)
+                    session_result_times[dn] = dur[0]
+                elif dur[1] is not None and dur[2] is None:
+                    eliminated.setdefault("q2", []).append(dn)
+                    session_result_times[dn] = dur[1]
+
     return {
         "session_name": session.session_name if session else None,
         "session_type": session.session_type if session else None,
         "circuit_short_name": session.circuit_short_name if session else None,
         "session_start": session_start,
         "session_end": session_end,
+        "phase_boundaries": phase_boundaries,
+        "eliminated": eliminated,
+        "session_result_times": session_result_times,
         "events": {
             "position": position_events,
             "intervals": interval_events,
             "weather": weather_events,
             "laps": lap_events,
             "starting_grid": starting_grid_events,
+            "session_result_positions": session_result_positions,
         },
         "drivers": drivers,
         "summaries": summaries,

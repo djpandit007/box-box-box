@@ -14,6 +14,7 @@ class EndpointConfig:
     path: str
     priority: Priority
     date_field: str = "date"  # field for incremental date>= filtering; "" = no incremental
+    race_only: bool = False  # skip this endpoint for non-race/sprint sessions
 
 
 NON_RACE_SESSION_TYPES = frozenset(
@@ -29,12 +30,12 @@ def is_non_race_session(session_type: str) -> bool:
 ENDPOINTS: tuple[EndpointConfig, ...] = (
     # P1 — critical, every 10s
     EndpointConfig("race_control", "/race_control", Priority.P1),
-    EndpointConfig("pit", "/pit", Priority.P1),
-    EndpointConfig("overtakes", "/overtakes", Priority.P1),
+    EndpointConfig("pit", "/pit", Priority.P1, race_only=True),
+    EndpointConfig("overtakes", "/overtakes", Priority.P1, race_only=True),
     # P2 — important, every 30s
     EndpointConfig("intervals", "/intervals", Priority.P2),
     # P3 — background, every 60s
-    EndpointConfig("position", "/position", Priority.P3),
+    EndpointConfig("position", "/position", Priority.P3, race_only=True),
     EndpointConfig("laps", "/laps", Priority.P3, date_field="date_start"),
     EndpointConfig("weather", "/weather", Priority.P3),
     EndpointConfig("stints", "/stints", Priority.P3, date_field=""),  # no date field; re-fetch entirely

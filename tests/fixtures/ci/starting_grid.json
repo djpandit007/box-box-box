@@ -3,14 +3,12 @@
     "meeting_key": 1280,
     "session_key": 11245,
     "driver_number": 1,
-    "position": 1,
-    "date": "2026-03-15T06:00:00+00:00"
+    "position": 1
   },
   {
     "meeting_key": 1280,
     "session_key": 11245,
     "driver_number": 55,
-    "position": 2,
-    "date": "2026-03-15T06:00:00+00:00"
+    "position": 2
   }
 ]

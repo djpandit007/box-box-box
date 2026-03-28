@@ -1,14 +1,45 @@
 <race_summaries session="{{ session_name }}" circuit="{{ circuit }}" session_type="{{ session_type }}">
 {% if final_standings %}
 <final_standings>
+<!-- For races: duration = total race time (seconds), gap_to_leader = time behind winner (seconds or e.g. "+1 LAP").
+     For qualifying: duration = [Q1, Q2, Q3] best lap times (seconds, null if eliminated), gap_to_leader = [Q1, Q2, Q3] gap to fastest in that phase (null if eliminated). -->
 {% for r in final_standings %}
-  {% if r.position %}P{{ r.position }}: {{ r.driver }}{% if r.gap_to_leader and r.gap_to_leader != 0 %}{% if r.gap_to_leader is iterable and r.gap_to_leader is not string %} (Q1/Q2/Q3: {{ r.gap_to_leader | join('/') }}){% else %} (+{{ r.gap_to_leader }}){% endif %}{% endif %}
-  {% elif r.dnf %}DNF: {{ r.driver }}
-  {% elif r.dns %}DNS: {{ r.driver }}
-  {% elif r.dsq %}DSQ: {{ r.driver }}
+  {% if r.position %}
+  <result position="{{ r.position }}" driver="{{ r.driver }}">
+    {%- if r.duration is not none %}
+    {%- if r.duration is iterable and r.duration is not string %} duration_q1_q2_q3="{{ r.duration | map('lap_time') | join(', ') }}"{% else %} total_time="{{ r.duration | lap_time }}"{% endif %}
+    {%- endif %}
+    {%- if r.gap_to_leader and r.gap_to_leader != 0 %}
+    {%- if r.gap_to_leader is iterable and r.gap_to_leader is not string %} gap_q1_q2_q3="{{ r.gap_to_leader | join(', ') }}"{% else %} gap_to_leader="{{ r.gap_to_leader }}"{% endif %}
+    {%- endif %}
+  </result>
+  {% elif r.dnf %}
+  <result status="DNF" driver="{{ r.driver }}" />
+  {% elif r.dns %}
+  <result status="DNS" driver="{{ r.driver }}" />
+  {% elif r.dsq %}
+  <result status="DSQ" driver="{{ r.driver }}" />
   {% endif %}
 {% endfor %}
 </final_standings>
+{% endif %}
+{% if qualifying_eliminations %}
+<qualifying_eliminations description="Drivers eliminated after each qualifying phase — always highlight these in the digest.">
+{% if qualifying_eliminations.q1 %}
+  <eliminated_after_q1>
+  {% for d in qualifying_eliminations.q1 %}
+    <driver name="{{ d.driver }}" q1_time="{{ d.q1_time | lap_time }}" />
+  {% endfor %}
+  </eliminated_after_q1>
+{% endif %}
+{% if qualifying_eliminations.q2 %}
+  <eliminated_after_q2>
+  {% for d in qualifying_eliminations.q2 %}
+    <driver name="{{ d.driver }}" q2_time="{{ d.q2_time | lap_time }}" />
+  {% endfor %}
+  </eliminated_after_q2>
+{% endif %}
+</qualifying_eliminations>
 {% endif %}
 {% for s in summaries %}
 <summary window="{{ s.window_start }}-{{ s.window_end }}">
