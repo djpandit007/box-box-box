@@ -331,16 +331,15 @@ class TestNonRaceStandings:
         assert ctx["standings"][1]["driver"] == "Lewis HAMILTON (HAM)"
         assert ctx["standings"][1]["gap"] == pytest.approx(0.7)
 
-    def test_qualifying_standings_include_q_times(self):
+    def test_qualifying_standings_no_q_times(self):
+        """q_times should not leak into standings — only shown when phase ends."""
         events = {
-            "laps": [
-                {"driver_number": 44, "lap_number": 5, "lap_duration": 88.5},
-            ],
+            "laps": [{"driver_number": 44, "lap_number": 5, "lap_duration": 88.5}],
         }
         best_laps = {44: 88.5, 63: 87.9}
         session_results = {
-            44: {"duration": [90.1, 89.2, 88.5], "gap_to_leader": [0.5, 0.3, 0.6]},
-            63: {"duration": [89.6, 88.9, 87.9], "gap_to_leader": [0.0, 0.0, 0.0]},
+            44: {"duration": [90.1, 89.2, 88.5]},
+            63: {"duration": [89.6, 88.9, 87.9]},
         }
         ctx = _build_template_context(
             events,
@@ -352,22 +351,52 @@ class TestNonRaceStandings:
             best_laps=best_laps,
             session_results=session_results,
         )
-        standings = ctx["standings"]
-        assert standings[0]["driver"] == "George RUSSELL (RUS)"
-        assert "q_times" in standings[0]
-        assert "1:29.600" in standings[0]["q_times"]  # Q1
-        assert "1:28.900" in standings[0]["q_times"]  # Q2
-        assert "1:27.900" in standings[0]["q_times"]  # Q3
+        for s in ctx["standings"]:
+            assert "q_times" not in s
 
-    def test_qualifying_eliminated_driver_q_times_show_na(self):
+    def test_qualifying_phase_passed_to_context(self):
         events = {
-            "laps": [
-                {"driver_number": 44, "lap_number": 2, "lap_duration": 90.5},
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 90.0}],
+        }
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Qualifying",
+            best_laps={44: 90.0},
+            qualifying_phase=2,
+        )
+        assert ctx["qualifying_phase"] == "Q2"
+
+    def test_no_significant_data_flag(self):
+        events = {
+            "weather": [
+                {
+                    "date": "2026-03-15T06:20:00+00:00",
+                    "air_temperature": 30.0,
+                    "track_temperature": 45.0,
+                    "humidity": 40.0,
+                    "wind_speed": 3.0,
+                    "wind_direction": 180,
+                    "rainfall": 0,
+                },
             ],
         }
-        best_laps = {44: 90.5}
-        session_results = {
-            44: {"duration": [90.5, 90.2, None], "gap_to_leader": [0.6, 1.2, None]},
+        ctx = _build_template_context(
+            events,
+            DRIVER_MAP,
+            None,
+            datetime(2026, 3, 15, 6, 20),
+            datetime(2026, 3, 15, 6, 25),
+            session_type="Qualifying",
+        )
+        assert ctx["no_significant_data"] is True
+
+    def test_no_significant_data_not_set_with_laps(self):
+        events = {
+            "laps": [{"driver_number": 44, "lap_number": 1, "lap_duration": 90.0}],
         }
         ctx = _build_template_context(
             events,
@@ -376,10 +405,9 @@ class TestNonRaceStandings:
             datetime(2026, 3, 15, 6, 20),
             datetime(2026, 3, 15, 6, 25),
             session_type="Qualifying",
-            best_laps=best_laps,
-            session_results=session_results,
+            best_laps={44: 90.0},
         )
-        assert "N/A" in ctx["standings"][0]["q_times"]
+        assert "no_significant_data" not in ctx
 
     def test_no_standings_without_best_laps(self):
         events = {

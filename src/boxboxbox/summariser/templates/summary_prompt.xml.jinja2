@@ -1,8 +1,12 @@
-<race_window from="{{ window_start }}" to="{{ window_end }}" session_type="{{ session_type }}">
+<race_window from="{{ window_start }}" to="{{ window_end }}" session_type="{{ session_type }}"{% if qualifying_phase %} qualifying_phase="{{ qualifying_phase }}"{% endif %}>
 
 <previous_summary>
-{{ previous_summary | default("This is the first summary window of the race.") }}
+{{ previous_summary | default("This is the first summary window of the session.") }}
 </previous_summary>
+
+{% if no_significant_data %}
+<note>No significant events or lap times were recorded during this window. Do not invent or hallucinate events. State briefly that the session is quiet or drivers are on out-laps/installation laps.</note>
+{% endif %}
 
 {% if race_control %}
 <race_control>
@@ -39,7 +43,7 @@
 {% if standings %}
 <standings description="Current standings based on fastest lap time so far in this session">
 {% for s in standings %}
-  <driver position="{{ s.position }}" name="{{ s.driver }}" best_lap="{{ s.best_lap | lap_time }}"{% if s.gap and s.gap > 0 %} gap="+{{ s.gap | lap_time }}"{% endif %}{% if s.q_times %} q_times="{{ s.q_times }}"{% endif %} />
+  <driver position="{{ s.position }}" name="{{ s.driver }}" best_lap="{{ s.best_lap | lap_time }}"{% if s.gap and s.gap > 0 %} gap="+{{ s.gap | lap_time }}"{% endif %} />
 {% endfor %}
 </standings>
 {% endif %}

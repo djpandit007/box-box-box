@@ -49,10 +49,12 @@ async def build_prompt(
     non_race = is_non_race_session(session_type)
     best_laps: dict[int, float] = {}
     session_results: dict[int, dict] = {}
+    qualifying_phase: int | None = None
     if non_race:
         best_laps = await _fetch_best_laps(db, session_key, window_end)
         if "Qualifying" in session_type:
             session_results = await _fetch_session_results(db, session_key)
+            qualifying_phase = await _fetch_qualifying_phase(db, session_key, window_end)
 
     context = _build_template_context(
         events_by_source,
@@ -63,6 +65,7 @@ async def build_prompt(
         session_type,
         best_laps=best_laps,
         session_results=session_results,
+        qualifying_phase=qualifying_phase,
     )
     template = _jinja_env.get_template("summary_prompt.xml.jinja2")
     return template.render(context)
@@ -120,6 +123,24 @@ async def _fetch_best_laps(db: AsyncSession, session_key: int, up_to: datetime) 
     return best
 
 
+async def _fetch_qualifying_phase(db: AsyncSession, session_key: int, up_to: datetime) -> int | None:
+    """Return the latest qualifying_phase from race_control events up to the given time."""
+    result = await db.execute(
+        select(RaceEvent.data)
+        .where(
+            RaceEvent.session_key == session_key,
+            RaceEvent.source == "race_control",
+            RaceEvent.event_date < up_to,
+        )
+        .order_by(RaceEvent.event_date.desc())
+    )
+    for (data,) in result.all():
+        qp = data.get("qualifying_phase")
+        if qp is not None:
+            return qp
+    return None
+
+
 async def _fetch_session_results(db: AsyncSession, session_key: int) -> dict[int, dict]:
     """Return session_result data keyed by driver_number."""
     result = await db.execute(
@@ -161,14 +182,24 @@ def _build_template_context(
     session_type: str = "Race",
     best_laps: dict[int, float] | None = None,
     session_results: dict[int, dict] | None = None,
+    qualifying_phase: int | None = None,
 ) -> dict:
     """Transform raw DB events into clean template context dicts."""
+    phase_labels = {1: "Q1", 2: "Q2", 3: "Q3"}
     ctx: dict = {
         "window_start": window_start.strftime("%H:%M:%S"),
         "window_end": window_end.strftime("%H:%M:%S"),
         "previous_summary": previous_summary,
         "session_type": session_type,
     }
+    if qualifying_phase is not None:
+        ctx["qualifying_phase"] = phase_labels.get(qualifying_phase, f"Q{qualifying_phase}")
+
+    # Check if this window has any meaningful lap data
+    has_laps = "laps" in events_by_source and any(e.get("lap_duration") is not None for e in events_by_source["laps"])
+    has_race_control = "race_control" in events_by_source
+    if not has_laps and not has_race_control:
+        ctx["no_significant_data"] = True
 
     # Race control
     if "race_control" in events_by_source:
@@ -236,18 +267,14 @@ def _build_template_context(
         leader_lap = best_laps[sorted_drivers[0]] if sorted_drivers else None
         standings_list = []
         for idx, dn in enumerate(sorted_drivers, 1):
-            entry: dict = {
-                "position": idx,
-                "driver": _driver_name(driver_map, dn) or f"#{dn}",
-                "best_lap": best_laps[dn],
-                "gap": best_laps[dn] - leader_lap if leader_lap else None,
-            }
-            # For qualifying, attach per-phase times from session_result
-            if session_results and dn in session_results:
-                duration = session_results[dn].get("duration")
-                if isinstance(duration, list):
-                    entry["q_times"] = ", ".join(_format_lap_time(t) if t is not None else "N/A" for t in duration)
-            standings_list.append(entry)
+            standings_list.append(
+                {
+                    "position": idx,
+                    "driver": _driver_name(driver_map, dn) or f"#{dn}",
+                    "best_lap": best_laps[dn],
+                    "gap": best_laps[dn] - leader_lap if leader_lap else None,
+                }
+            )
         ctx["standings"] = standings_list
 
     # Qualifying phase results — triggered by race_control "SESSION FINISHED" events
