@@ -143,6 +143,7 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
         phase_boundaries: list[str] = []
         eliminated: dict[str, list[int]] = {}
         session_result_positions: dict[int, int] = {}
+        session_result_times: dict[int, float] = {}
         if non_race and session and "Qualifying" in session.session_type:
             rc_result = await db.execute(
                 select(RaceEvent.event_date, RaceEvent.data)
@@ -175,8 +176,10 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
                     continue
                 if dur[0] is not None and dur[1] is None:
                     eliminated.setdefault("q1", []).append(dn)
+                    session_result_times[dn] = dur[0]
                 elif dur[1] is not None and dur[2] is None:
                     eliminated.setdefault("q2", []).append(dn)
+                    session_result_times[dn] = dur[1]
 
     return {
         "session_name": session.session_name if session else None,
@@ -186,6 +189,7 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
         "session_end": session_end,
         "phase_boundaries": phase_boundaries,
         "eliminated": eliminated,
+        "session_result_times": session_result_times,
         "events": {
             "position": position_events,
             "intervals": interval_events,

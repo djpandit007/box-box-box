@@ -253,20 +253,19 @@ def build_leaderboard(snapshot):
     q2_out = set(elim.get("q2", []))
 
     # Find leader's best lap for gap calculation (practice/qualifying)
+    # Only consider active drivers (not eliminated) for leader lap
     _leader_lap = None
     if not is_race and best_laps:
-        durations = [v.get("lap_duration") for v in best_laps.values() if v.get("lap_duration") is not None]
-        _leader_lap = min(durations) if durations else None
+        elim_dns = set(q1_out | q2_out)
+        active_durations = [
+            v.get("lap_duration") for k, v in best_laps.items()
+            if v.get("lap_duration") is not None and int(k) not in elim_dns and k not in elim_dns
+        ]
+        _leader_lap = min(active_durations) if active_durations else None
 
-    # Sort: race by position, practice/qualifying by fastest lap (no time = bottom)
-    if is_race:
-        sorted_drivers = sorted(positions, key=lambda d: positions[d])
-    else:
-        def lap_sort_key(d):
-            info = _get_lap_info(best_laps, d)
-            dur = info.get("lap_duration") if info else None
-            return (0, dur) if dur is not None else (1, 0)
-        sorted_drivers = sorted(positions, key=lap_sort_key)
+    # Sort by assigned position (server already handles ordering:
+    # race by position events, practice/qualifying by best lap with eliminated pinned at bottom)
+    sorted_drivers = sorted(positions, key=lambda d: positions[d])
 
     tbody = document.getElementById("leaderboard-body")
     existing = {}
@@ -570,25 +569,32 @@ def process_snapshot(snapshot):
             sorted.forEach(([dn, _], idx) => {
               positions.push({ driver_number: Number(dn), position: idx + 1 });
             });
-            // Append eliminated drivers at their final position from session_result
+            // Active drivers with no time in this phase
             const active = new Set(Object.keys(bestLaps).map(Number));
             const elim = this.replayData.eliminated || {};
-            for (const phase of ["q1", "q2"]) {
-              for (const dn of (elim[phase] || [])) {
-                if (!active.has(dn)) {
-                  // Find their final position from session_result standings
-                  const sr = this.replayData.events.session_result_positions || {};
-                  const finalPos = sr[dn];
-                  positions.push({ driver_number: dn, position: finalPos || positions.length + 1 });
-                  active.add(dn);
-                }
-              }
-            }
-            // Remaining drivers with no time at the bottom
+            const srt = this.replayData.session_result_times || {};
+            const boundaries = this.replayData.phase_boundaries || [];
+            // Collect eliminated drivers — only after their phase has ended
+            // Q1 eliminated: visible after Q1 ends (boundary[0])
+            // Q2 eliminated: visible after Q2 ends (boundary[1])
+            const q1Out = (boundaries.length >= 1 && boundaries[0] <= timestamp) ? (elim.q1 || []) : [];
+            const q2Out = (boundaries.length >= 2 && boundaries[1] <= timestamp) ? (elim.q2 || []) : [];
+            // Mark eliminated as accounted for
+            for (const dn of [...q2Out, ...q1Out]) active.add(dn);
+            // No-time active drivers
             for (const dn of Object.keys(this.replayData.drivers)) {
               if (!active.has(Number(dn))) {
                 positions.push({ driver_number: Number(dn), position: positions.length + 1 });
               }
+            }
+            // Q2 eliminated block, then Q1 eliminated block — sequential positions
+            for (const dn of q2Out) {
+              positions.push({ driver_number: dn, position: positions.length + 1 });
+              if (srt[dn] != null) bestLaps[dn] = { lap_duration: srt[dn], lap_number: null };
+            }
+            for (const dn of q1Out) {
+              positions.push({ driver_number: dn, position: positions.length + 1 });
+              if (srt[dn] != null) bestLaps[dn] = { lap_duration: srt[dn], lap_number: null };
             }
           } else {
             // Race/sprint: use position events

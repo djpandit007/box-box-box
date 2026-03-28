@@ -303,34 +303,34 @@ def _build_template_context(
                     "gap": best_laps[dn] - leader_lap if leader_lap else None,
                 }
             )
-        # For qualifying, append eliminated drivers at their final position
+        # For qualifying, append eliminated drivers below active ones
+        # Q2 eliminated first (finished higher), then Q1 eliminated
         if session_results:
             active_drivers = set(best_laps)
             by_position = sorted(session_results.items(), key=lambda kv: kv[1].get("position") or 999)
+            q2_elim = []
+            q1_elim = []
             for dn, data in by_position:
                 if dn in active_drivers:
                     continue
                 duration = data.get("duration")
                 if not isinstance(duration, list) or len(duration) < 3:
                     continue
-                # Determine which phase they were eliminated in and their best time
-                if duration[0] is not None and duration[1] is None:
-                    phase_label = "Q1"
-                    elim_time = duration[0]
-                elif duration[1] is not None and duration[2] is None:
-                    phase_label = "Q2"
-                    elim_time = duration[1]
-                else:
-                    continue
-                standings_list.append(
-                    {
-                        "position": data.get("position"),
-                        "driver": _driver_name(driver_map, dn) or f"#{dn}",
-                        "best_lap": elim_time,
-                        "gap": None,
-                        "eliminated": phase_label,
-                    }
-                )
+                if duration[1] is not None and duration[2] is None:
+                    q2_elim.append((dn, duration[1], "Q2"))
+                elif duration[0] is not None and duration[1] is None:
+                    q1_elim.append((dn, duration[0], "Q1"))
+            for group in (q2_elim, q1_elim):
+                for dn, elim_time, phase_label in group:
+                    standings_list.append(
+                        {
+                            "position": len(standings_list) + 1,
+                            "driver": _driver_name(driver_map, dn) or f"#{dn}",
+                            "best_lap": elim_time,
+                            "gap": None,
+                            "eliminated": phase_label,
+                        }
+                    )
         ctx["standings"] = standings_list
 
     # Qualifying phase results — triggered by race_control "SESSION FINISHED" events

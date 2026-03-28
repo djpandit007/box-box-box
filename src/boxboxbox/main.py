@@ -91,9 +91,16 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
                     # Derive positions from best lap ranking (current phase only)
                     sorted_drivers = sorted(best_laps, key=lambda d: best_laps[d]["lap_duration"])
                     positions = [{"driver_number": dn, "position": idx} for idx, dn in enumerate(sorted_drivers, 1)]
-                    # Append eliminated drivers at their final position, then
-                    # remaining drivers (no time yet) at the bottom
+                    # Active drivers with no time in this phase
+                    driver_result = await db.execute(
+                        select(Driver.driver_number).where(Driver.session_key == session_key)
+                    )
+                    all_drivers = {row[0] for row in driver_result.all()}
                     active = set(best_laps)
+
+                    # For qualifying, group eliminated drivers and pin below active
+                    q2_eliminated: list[tuple[int, float | None]] = []
+                    q1_eliminated: list[tuple[int, float | None]] = []
                     if "Qualifying" in session_type:
                         sr_result = await db.execute(
                             select(RaceEvent.driver_number, RaceEvent.data).where(
@@ -105,18 +112,24 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
                             if dn in active or dn is None:
                                 continue
                             dur = data.get("duration")
-                            if isinstance(dur, list) and len(dur) >= 3:
-                                final_pos = data.get("position")
-                                if final_pos is not None:
-                                    positions.append({"driver_number": dn, "position": final_pos})
-                                    active.add(dn)
-                    driver_result = await db.execute(
-                        select(Driver.driver_number).where(Driver.session_key == session_key)
-                    )
-                    all_drivers = {row[0] for row in driver_result.all()}
+                            if not isinstance(dur, list) or len(dur) < 3:
+                                continue
+                            if dur[1] is not None and dur[2] is None:
+                                q2_eliminated.append((dn, dur[1]))
+                                active.add(dn)
+                            elif dur[0] is not None and dur[1] is None:
+                                q1_eliminated.append((dn, dur[0]))
+                                active.add(dn)
+
+                    # No-time active drivers
                     no_time = all_drivers - active
                     for dn in no_time:
                         positions.append({"driver_number": dn, "position": len(positions) + 1})
+
+                    # Q2 eliminated block, then Q1 eliminated block
+                    for group in (q2_eliminated, q1_eliminated):
+                        for dn, lap_time in group:
+                            positions.append({"driver_number": dn, "position": len(positions) + 1})
                 else:
                     pos_subq = (
                         select(RaceEvent.driver_number, func.max(RaceEvent.event_date).label("max_date"))
@@ -187,6 +200,13 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
                     if weather_data
                     else {"rainfall": 0, "air_temp": 0, "track_temp": 0}
                 )
+
+                # Include eliminated drivers' lap times in best_laps for display
+                if non_race and "Qualifying" in session_type:
+                    for group in (q2_eliminated, q1_eliminated):
+                        for dn, lap_time in group:
+                            if lap_time is not None:
+                                best_laps[dn] = {"lap_duration": lap_time, "lap_number": None}
 
             if positions:
                 payload: dict = {"positions": positions, "intervals": intervals, "weather": weather}
