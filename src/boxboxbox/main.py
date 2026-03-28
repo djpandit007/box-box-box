@@ -47,12 +47,32 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
         try:
             async with session_factory() as db:
                 # Best laps — computed first for non-race so positions can be derived from them
+                # For qualifying, only consider laps from the current phase
                 best_laps: dict[int, dict] = {}
                 if non_race:
-                    laps_result = await db.execute(
-                        select(RaceEvent.driver_number, RaceEvent.data).where(
-                            RaceEvent.session_key == session_key, RaceEvent.source == "laps"
+                    laps_conditions = [
+                        RaceEvent.session_key == session_key,
+                        RaceEvent.source == "laps",
+                    ]
+                    # For qualifying, find when the current phase started and reset laps
+                    if "Qualifying" in session_type:
+                        phase_result = await db.execute(
+                            select(RaceEvent.event_date, RaceEvent.data)
+                            .where(
+                                RaceEvent.session_key == session_key,
+                                RaceEvent.source == "race_control",
+                            )
+                            .order_by(RaceEvent.event_date.desc())
                         )
+                        for event_date, data in phase_result.all():
+                            qp = data.get("qualifying_phase")
+                            msg = (data.get("message") or "").upper()
+                            if qp is not None and "FINISHED" in msg:
+                                laps_conditions.append(RaceEvent.event_date >= event_date)
+                                break
+
+                    laps_result = await db.execute(
+                        select(RaceEvent.driver_number, RaceEvent.data).where(*laps_conditions)
                     )
                     for driver_number, data in laps_result.all():
                         dur = data.get("lap_duration")

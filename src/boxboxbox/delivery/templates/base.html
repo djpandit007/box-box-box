@@ -523,10 +523,17 @@ def process_snapshot(snapshot):
           const isNonRace = st !== "Race" && st !== "Sprint";
 
           // Best lap per driver up to timestamp (practice/qualifying leaderboard sorting)
+          // For qualifying, only consider laps from the current phase
           const bestLaps = {};
           if (events.laps && isNonRace) {
+            let phaseStart = null;
+            const boundaries = this.replayData.phase_boundaries || [];
+            for (const b of boundaries) {
+              if (b <= timestamp) phaseStart = b;
+            }
             for (const evt of events.laps) {
               if (evt.event_date <= timestamp && evt.lap_duration != null) {
+                if (phaseStart && evt.event_date < phaseStart) continue;
                 const prev = bestLaps[evt.driver_number];
                 if (!prev || evt.lap_duration < prev.lap_duration) {
                   bestLaps[evt.driver_number] = { lap_duration: evt.lap_duration, lap_number: evt.lap_number };

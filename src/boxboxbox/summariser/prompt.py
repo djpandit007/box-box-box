@@ -51,10 +51,12 @@ async def build_prompt(
     session_results: dict[int, dict] = {}
     qualifying_phase: int | None = None
     if non_race:
-        best_laps = await _fetch_best_laps(db, session_key, window_end)
+        phase_start: datetime | None = None
         if "Qualifying" in session_type:
             session_results = await _fetch_session_results(db, session_key)
             qualifying_phase = await _fetch_qualifying_phase(db, session_key, window_end)
+            phase_start = await _fetch_phase_start_time(db, session_key, window_end)
+        best_laps = await _fetch_best_laps(db, session_key, window_end, from_time=phase_start)
 
     context = _build_template_context(
         events_by_source,
@@ -104,15 +106,18 @@ async def _fetch_driver_map(db: AsyncSession, session_key: int) -> dict[int, Dri
     return {d.driver_number: d for d in drivers}
 
 
-async def _fetch_best_laps(db: AsyncSession, session_key: int, up_to: datetime) -> dict[int, float]:
-    """Return best lap duration per driver for all laps up to the given time."""
-    result = await db.execute(
-        select(RaceEvent.driver_number, RaceEvent.data).where(
-            RaceEvent.session_key == session_key,
-            RaceEvent.source == "laps",
-            RaceEvent.event_date < up_to,
-        )
-    )
+async def _fetch_best_laps(
+    db: AsyncSession, session_key: int, up_to: datetime, from_time: datetime | None = None
+) -> dict[int, float]:
+    """Return best lap duration per driver for laps in [from_time, up_to)."""
+    conditions = [
+        RaceEvent.session_key == session_key,
+        RaceEvent.source == "laps",
+        RaceEvent.event_date < up_to,
+    ]
+    if from_time is not None:
+        conditions.append(RaceEvent.event_date >= from_time)
+    result = await db.execute(select(RaceEvent.driver_number, RaceEvent.data).where(*conditions))
     best: dict[int, float] = {}
     for driver_number, data in result.all():
         dur = data.get("lap_duration")
@@ -121,6 +126,29 @@ async def _fetch_best_laps(db: AsyncSession, session_key: int, up_to: datetime) 
         if driver_number not in best or dur < best[driver_number]:
             best[driver_number] = dur
     return best
+
+
+async def _fetch_phase_start_time(db: AsyncSession, session_key: int, up_to: datetime) -> datetime | None:
+    """Return the timestamp of the most recent 'SESSION FINISHED' race_control event.
+
+    If found, the current qualifying phase started after this event.
+    Returns None if no phase has ended yet (i.e. still in Q1).
+    """
+    result = await db.execute(
+        select(RaceEvent.event_date, RaceEvent.data)
+        .where(
+            RaceEvent.session_key == session_key,
+            RaceEvent.source == "race_control",
+            RaceEvent.event_date < up_to,
+        )
+        .order_by(RaceEvent.event_date.desc())
+    )
+    for event_date, data in result.all():
+        qp = data.get("qualifying_phase")
+        msg = (data.get("message") or "").upper()
+        if qp is not None and "FINISHED" in msg:
+            return event_date
+    return None
 
 
 async def _fetch_qualifying_phase(db: AsyncSession, session_key: int, up_to: datetime) -> int | None:

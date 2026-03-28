@@ -139,12 +139,31 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
             else None
         )
 
+        # For qualifying, compute phase boundary timestamps so the frontend
+        # can reset best laps at each phase transition
+        phase_boundaries: list[str] = []
+        if non_race and session and "Qualifying" in session.session_type:
+            rc_result = await db.execute(
+                select(RaceEvent.event_date, RaceEvent.data)
+                .where(
+                    RaceEvent.session_key == session_key,
+                    RaceEvent.source == "race_control",
+                )
+                .order_by(RaceEvent.event_date)
+            )
+            for event_date, data in rc_result.all():
+                qp = data.get("qualifying_phase")
+                msg = (data.get("message") or "").upper()
+                if qp is not None and "FINISHED" in msg:
+                    phase_boundaries.append(event_date.isoformat())
+
     return {
         "session_name": session.session_name if session else None,
         "session_type": session.session_type if session else None,
         "circuit_short_name": session.circuit_short_name if session else None,
         "session_start": session_start,
         "session_end": session_end,
+        "phase_boundaries": phase_boundaries,
         "events": {
             "position": position_events,
             "intervals": interval_events,
