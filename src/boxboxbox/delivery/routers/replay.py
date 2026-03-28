@@ -139,9 +139,9 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
             else None
         )
 
-        # For qualifying, compute phase boundary timestamps so the frontend
-        # can reset best laps at each phase transition
+        # For qualifying, compute phase boundary timestamps and elimination status
         phase_boundaries: list[str] = []
+        eliminated: dict[str, list[int]] = {}
         if non_race and session and "Qualifying" in session.session_type:
             rc_result = await db.execute(
                 select(RaceEvent.event_date, RaceEvent.data)
@@ -157,6 +157,21 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
                 if qp is not None and "FINISHED" in msg:
                     phase_boundaries.append(event_date.isoformat())
 
+            sr_result = await db.execute(
+                select(RaceEvent.driver_number, RaceEvent.data).where(
+                    RaceEvent.session_key == session_key,
+                    RaceEvent.source == "session_result",
+                )
+            )
+            for dn, data in sr_result.all():
+                dur = data.get("duration")
+                if not isinstance(dur, list) or len(dur) < 3 or dn is None:
+                    continue
+                if dur[0] is not None and dur[1] is None:
+                    eliminated.setdefault("q1", []).append(dn)
+                elif dur[1] is not None and dur[2] is None:
+                    eliminated.setdefault("q2", []).append(dn)
+
     return {
         "session_name": session.session_name if session else None,
         "session_type": session.session_type if session else None,
@@ -164,6 +179,7 @@ async def get_replay_data(session_key: int, request: Request) -> dict:
         "session_start": session_start,
         "session_end": session_end,
         "phase_boundaries": phase_boundaries,
+        "eliminated": eliminated,
         "events": {
             "position": position_events,
             "intervals": interval_events,

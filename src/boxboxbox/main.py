@@ -174,6 +174,25 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
                 payload: dict = {"positions": positions, "intervals": intervals, "weather": weather}
                 if non_race and best_laps:
                     payload["best_laps"] = {str(k): v for k, v in best_laps.items()}
+                # For qualifying, include elimination status per driver
+                if non_race and "Qualifying" in session_type:
+                    sr_result = await db.execute(
+                        select(RaceEvent.driver_number, RaceEvent.data).where(
+                            RaceEvent.session_key == session_key,
+                            RaceEvent.source == "session_result",
+                        )
+                    )
+                    eliminated: dict[str, list[int]] = {}
+                    for dn, data in sr_result.all():
+                        dur = data.get("duration")
+                        if not isinstance(dur, list) or len(dur) < 3 or dn is None:
+                            continue
+                        if dur[0] is not None and dur[1] is None:
+                            eliminated.setdefault("q1", []).append(dn)
+                        elif dur[1] is not None and dur[2] is None:
+                            eliminated.setdefault("q2", []).append(dn)
+                    if eliminated:
+                        payload["eliminated"] = eliminated
                 await manager.broadcast_json(payload)
         except asyncio.CancelledError:
             return

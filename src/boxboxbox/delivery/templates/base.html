@@ -12,6 +12,10 @@
     .leaderboard tbody tr { transition: transform 0.3s ease; }
     .leaderboard td.driver-cell { white-space: nowrap; }
     .leaderboard td.team-cell { font-size: .85em; }
+    .eliminated { opacity: 0.4; }
+    .eliminated-tag { font-size: .7em; font-weight: 600; padding: .1rem .3rem; border-radius: 3px; }
+    .eliminated-tag-q1 { background: #fee2e2; color: #991b1b; }
+    .eliminated-tag-q2 { background: #fef3c7; color: #92400e; }
     .battle { background: #fff3cd; }
     .trend-closing { color: green; }
     .trend-opening { color: red; }
@@ -244,6 +248,9 @@ def build_leaderboard(snapshot):
     positions = {p["driver_number"]: p["position"] for p in snapshot["positions"]}
     intervals = {i["driver_number"]: i["interval"] for i in snapshot["intervals"]}
     best_laps = snapshot.get("best_laps", {})
+    elim = snapshot.get("eliminated") or {}
+    q1_out = set(elim.get("q1", []))
+    q2_out = set(elim.get("q2", []))
 
     # Find leader's best lap for gap calculation (practice/qualifying)
     _leader_lap = None
@@ -280,6 +287,16 @@ def build_leaderboard(snapshot):
         img_html = f"<img src='{headshot}' width='24' height='24' style='border-radius:50%;vertical-align:middle;margin-right:4px'>" if headshot else ""
         team_dot = f"<span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#{colour};margin-right:6px;vertical-align:middle'></span>"
 
+        # Determine elimination status
+        elim_class = ""
+        elim_tag = ""
+        if driver_number in q1_out or int(key) in q1_out:
+            elim_class = "eliminated"
+            elim_tag = " <span class='eliminated-tag eliminated-tag-q1'>OUT Q1</span>"
+        elif driver_number in q2_out or int(key) in q2_out:
+            elim_class = "eliminated"
+            elim_tag = " <span class='eliminated-tag eliminated-tag-q2'>OUT Q2</span>"
+
         if is_race:
             col4 = f"{interval:.3f}" if interval is not None else ""
             col5_class = "trend trend-stable"
@@ -296,21 +313,23 @@ def build_leaderboard(snapshot):
 
         if key in existing:
             tr = existing[key]
+            tr.className = elim_class
             cells = tr.querySelectorAll("td")
             if cells.length >= 5:
                 cells[0].textContent = str(pos)
                 cells[3].textContent = col4
                 cells[4].className = col5_class
-                cells[4].textContent = col5_text
+                cells[4].innerHTML = elim_tag if elim_tag else col5_text
         else:
             tr = document.createElement("tr")
             tr.setAttribute("data-driver", key)
+            tr.className = elim_class
             if is_race:
                 col4_html = f"<td class='interval'>{col4}</td>"
                 col5_html = f"<td class='{col5_class}'>{col5_text}</td>"
             else:
                 col4_html = f"<td class='interval' style='font-family:monospace'>{col4}</td>"
-                col5_html = f"<td class='{col5_class}' style='font-family:monospace'>{col5_text}</td>"
+                col5_html = f"<td class='{col5_class}' style='font-family:monospace'>{elim_tag if elim_tag else col5_text}</td>"
             tr.innerHTML = (
                 f"<td>{pos}</td>"
                 f"<td class='driver-cell'>{img_html}{name} <span style='color:#999;font-size:.8em'>#{driver_number}</span></td>"
@@ -598,7 +617,19 @@ def process_snapshot(snapshot):
             }
           }
 
-          return { positions, intervals, weather, best_laps: bestLaps };
+          // For qualifying, include elimination status based on passed phase boundaries
+          const eliminated = {};
+          const boundaries = this.replayData.phase_boundaries || [];
+          const elim = this.replayData.eliminated || {};
+          // After Q1 boundary passed, include q1 eliminated; after Q2, include q2
+          if (boundaries.length >= 1 && boundaries[0] <= timestamp && elim.q1) {
+            eliminated.q1 = elim.q1;
+          }
+          if (boundaries.length >= 2 && boundaries[1] <= timestamp && elim.q2) {
+            eliminated.q2 = elim.q2;
+          }
+
+          return { positions, intervals, weather, best_laps: bestLaps, eliminated };
         },
 
         togglePlay() {
