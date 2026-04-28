@@ -81,6 +81,8 @@ async def build_prompt(
     session_started: bool = True,
     session_finished: bool = False,
     total_laps: int | None = None,
+    weekend_context: dict[str, str] | None = None,
+    historical_summaries: list[dict] | None = None,
 ) -> str | None:
     """Build an XML-tagged prompt from race events in [window_start, window_end).
 
@@ -129,6 +131,8 @@ async def build_prompt(
         session_results=session_results,
         qualifying_phase=qualifying_phase,
         total_laps=total_laps,
+        weekend_context=weekend_context,
+        historical_summaries=historical_summaries,
     )
     if not session_started:
         context["session_not_started"] = True
@@ -278,6 +282,8 @@ def _build_template_context(
     session_results: dict[int, dict] | None = None,
     qualifying_phase: int | None = None,
     total_laps: int | None = None,
+    weekend_context: dict[str, str] | None = None,
+    historical_summaries: list[dict] | None = None,
 ) -> dict:
     """Transform raw DB events into clean template context dicts."""
     phase_labels = {1: "Q1", 2: "Q2", 3: "Q3"}
@@ -287,6 +293,10 @@ def _build_template_context(
         "previous_summary": previous_summary,
         "session_type": session_type,
     }
+    if weekend_context:
+        ctx["weekend_context"] = weekend_context
+    if historical_summaries:
+        ctx["historical_summaries"] = historical_summaries
     if qualifying_phase is not None:
         ctx["qualifying_phase"] = phase_labels.get(qualifying_phase, f"Q{qualifying_phase}")
 
