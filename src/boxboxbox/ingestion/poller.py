@@ -63,6 +63,7 @@ class Poller:
         async with self._session_factory() as db:
             stmt = pg_insert(Session).values(
                 session_key=s.session_key,
+                meeting_key=s.meeting_key,
                 session_name=s.session_name,
                 session_type=s.session_type,
                 circuit_short_name=s.circuit_short_name,
