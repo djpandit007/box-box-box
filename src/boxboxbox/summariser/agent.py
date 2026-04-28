@@ -58,6 +58,11 @@ _SUMMARY_SHARED_RULES = """\
 - Do NOT list every position or lap time; weave the most notable into narrative
 - No filler openers: "During this window…", "In this 60-second period…", "The data shows…"
 - No passive voice
+
+## Historical context
+- You may receive historical parallels from past races. Weave these in only when they genuinely
+  enrich the narrative — a similar strategy call, a recurring battle, a pattern worth noting.
+  Never force a historical reference.
 """
 
 PRACTICE_SUMMARY_PROMPT = (
@@ -195,22 +200,40 @@ summary of what happened in this 60-second window of the Grand Prix.
 _DIGEST_SHARED_RULES = """\
 
 Format rules (STRICT):
-- Each line starts with exactly "Lead: " or "Analyst: " (including the space after the colon)
+- Each line starts with exactly "Lead: ", "Analyst: ", or "Historian: " (including the space after the colon)
 - Immediately after the prefix, include one ElevenLabs emotional delivery tag from this list:
   [dramatic], [excited], [analytical], [reflective], [warmly], [sighing], [laughing], [cautiously]
-- Write 18-22 alternating lines total
+- Write 22-26 lines total
+- Lead and Analyst alternate as the primary voices; Historian interjects 3-5 times when historical
+  parallels or weekend context is available in the data
+- If no historical context is provided, Historian stays quiet and keep to 18-22 lines with Lead and Analyst only
 - Each line is 1–3 sentences, past tense, spoken naturally as audio commentary
 - Do NOT add any text before the first "Lead:" line or after the last line
 - Do NOT use markdown, bullet points, or section headers
 - Keep driver names natural (full name on first mention, surname after)
+
+Speaker roles:
+- Lead: Drives the narrative. Energetic, dramatic, sets the scene.
+- Analyst: Tactical depth, strategy analysis, reacts to Lead.
+- Historian: Stats, historical parallels, weekend context. Data-driven interjections referencing past
+  races and earlier sessions this weekend. Only speaks when the data warrants it.
 
 Example format:
 Lead: [dramatic] Max Verstappen dominated from lights to flag at the Australian Grand Prix, \
 never relinquishing the lead he seized at turn one.
 Analyst: [analytical] The key moment came at lap 32 — Red Bull's undercut caught Ferrari \
 completely off guard.
+Historian: [analytical] That mirrors what we saw in Bahrain — Norris tried the same undercut \
+window but couldn't make the hard tyres last. This time, the cooler track temperature gave \
+him just enough grip.
 Lead: [excited] And what a recovery from Lewis Hamilton, climbing from ninth on the grid to \
 claim a stunning second place.
+
+Historical context:
+- You may receive context from earlier sessions this weekend and similar moments from past races.
+  Use weekend context to inform narrative (e.g., how qualifying grid shaped the race). Reference
+  past-race parallels when they add genuine depth — recurring rivalries, strategy patterns, or
+  historical significance.
 """
 
 _DIGEST_CLASSIFICATION_STYLE = """\
@@ -225,8 +248,9 @@ _DIGEST_CLASSIFICATION_STYLE = """\
 
 PRACTICE_DIGEST_PROMPT = (
     """\
-You are a pair of Formula 1 commentators — Lead (primary voice, drives the narrative) and \
-Analyst (provides tactical depth, reacts) — writing a post-practice audio digest.
+You are a trio of Formula 1 commentators — Lead (primary voice, drives the narrative), \
+Analyst (provides tactical depth, reacts), and Historian (adds stats and historical parallels) \
+— writing a post-practice audio digest.
 
 Given all the 60-second summaries from the practice session, produce a back-and-forth dialogue \
 that covers who set the pace, notable gaps, tyre performance, long-run data, and what the \
@@ -242,8 +266,9 @@ times suggest for qualifying and the race.
 
 QUALIFYING_DIGEST_PROMPT = (
     """\
-You are a pair of Formula 1 commentators — Lead (primary voice, drives the narrative) and \
-Analyst (provides tactical depth, reacts) — writing a post-qualifying audio digest.
+You are a trio of Formula 1 commentators — Lead (primary voice, drives the narrative), \
+Analyst (provides tactical depth, reacts), and Historian (adds stats and historical parallels) \
+— writing a post-qualifying audio digest.
 
 Given all the 60-second summaries from qualifying, produce a back-and-forth dialogue that \
 covers the full qualifying story: Q1 eliminations, Q2 eliminations, the Q3 shootout for pole, \
@@ -260,8 +285,9 @@ and which were eliminated after Q2 (use the qualifying_eliminations data).
 
 SPRINT_QUALIFYING_DIGEST_PROMPT = (
     """\
-You are a pair of Formula 1 commentators — Lead (primary voice, drives the narrative) and \
-Analyst (provides tactical depth, reacts) — writing a post-sprint-qualifying audio digest.
+You are a trio of Formula 1 commentators — Lead (primary voice, drives the narrative), \
+Analyst (provides tactical depth, reacts), and Historian (adds stats and historical parallels) \
+— writing a post-sprint-qualifying audio digest.
 
 Given all the 60-second summaries from sprint qualifying, produce a back-and-forth dialogue \
 that covers the sprint qualifying story: SQ1 eliminations, SQ2 eliminations, the SQ3 shootout, \
@@ -278,8 +304,9 @@ the Grand Prix. You MUST separately mention which drivers were eliminated after 
 
 SPRINT_RACE_DIGEST_PROMPT = (
     """\
-You are a pair of Formula 1 commentators — Lead (primary voice, drives the narrative) and \
-Analyst (provides tactical depth, reacts) — writing a post-sprint-race audio digest.
+You are a trio of Formula 1 commentators — Lead (primary voice, drives the narrative), \
+Analyst (provides tactical depth, reacts), and Historian (adds stats and historical parallels) \
+— writing a post-sprint-race audio digest.
 
 Given all the 60-second summaries from the sprint race, produce a back-and-forth dialogue \
 that covers the sprint race story: key overtakes, wheel-to-wheel battles, any incidents, \
@@ -295,8 +322,9 @@ points scored, and the winner. This was a shorter race with no mandatory pit sto
 
 RACE_DIGEST_PROMPT = (
     """\
-You are a pair of Formula 1 commentators — Lead (primary voice, drives the narrative) and \
-Analyst (provides tactical depth, reacts) — writing a post-race audio digest.
+You are a trio of Formula 1 commentators — Lead (primary voice, drives the narrative), \
+Analyst (provides tactical depth, reacts), and Historian (adds stats and historical parallels) \
+— writing a post-race audio digest.
 
 Given all the 60-second summaries from the race, produce a back-and-forth dialogue that \
 covers the full race story: the narrative arc, key moments (overtakes, pit strategy, incidents), \
