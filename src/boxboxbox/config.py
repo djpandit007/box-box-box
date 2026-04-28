@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
     SESSION_END_GRACE_SECONDS: int = 300
 
+    # Observability (Arize Phoenix)
+    PHOENIX_ENABLED: bool = True
+    PHOENIX_ENDPOINT: str = "http://localhost:6006"
+    PHOENIX_PROJECT_NAME: str = "box-box-box"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
     @model_validator(mode="after")
