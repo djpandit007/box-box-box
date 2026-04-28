@@ -70,6 +70,7 @@ async def build_prompt(
     previous_summary: str | None,
     session_type: str = "Race",
     session_started: bool = True,
+    total_laps: int | None = None,
 ) -> str | None:
     """Build an XML-tagged prompt from race events in [window_start, window_end).
 
@@ -111,6 +112,7 @@ async def build_prompt(
         best_laps=best_laps,
         session_results=session_results,
         qualifying_phase=qualifying_phase,
+        total_laps=total_laps,
     )
     if not session_started:
         context["session_not_started"] = True
@@ -257,6 +259,7 @@ def _build_template_context(
     best_laps: dict[int, float] | None = None,
     session_results: dict[int, dict] | None = None,
     qualifying_phase: int | None = None,
+    total_laps: int | None = None,
 ) -> dict:
     """Transform raw DB events into clean template context dicts."""
     phase_labels = {1: "Q1", 2: "Q2", 3: "Q3"}
@@ -268,6 +271,18 @@ def _build_template_context(
     }
     if qualifying_phase is not None:
         ctx["qualifying_phase"] = phase_labels.get(qualifying_phase, f"Q{qualifying_phase}")
+
+    # Extract current lap from all events in the window.
+    current_lap: int | None = None
+    for source_events in events_by_source.values():
+        for e in source_events:
+            lap = e.get("lap_number")
+            if lap is not None:
+                current_lap = max(current_lap or 0, lap)
+    if current_lap is not None:
+        ctx["current_lap"] = current_lap
+    if total_laps is not None:
+        ctx["total_laps"] = total_laps
 
     # Check if this window has any meaningful lap data
     has_laps = "laps" in events_by_source and any(e.get("lap_duration") is not None for e in events_by_source["laps"])

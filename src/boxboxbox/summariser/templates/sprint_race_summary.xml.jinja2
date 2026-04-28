@@ -1,5 +1,9 @@
 <sprint_race_window from="{{ window_start }}" to="{{ window_end }}" session_type="{{ session_type }}">
 
+{% if current_lap %}
+<lap_progress>Lap {{ current_lap }}{% if total_laps %} of {{ total_laps }}{% endif %}</lap_progress>
+{% endif %}
+
 <previous_summary>
 {{ previous_summary | default("This is the first summary window of the session.") }}
 </previous_summary>

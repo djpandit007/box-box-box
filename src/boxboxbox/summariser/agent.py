@@ -151,10 +151,12 @@ and there is no mandatory pit stop, so the action is pure wheel-to-wheel racing.
 - Weather only if conditions changed or are affecting the race
 
 ## Sign-off
-- Always end with a standings line using acronyms from the positions data:
-  "Leading: VER | NOR | LEC"
-- Use exactly this format: "Leading: P1_ACR | P2_ACR | P3_ACR"
-- If position data is unavailable for the window, omit the sign-off line
+- Always end with a standings line. If lap_progress data is available, prepend it:
+  "Lap 12/24 | Leading: VER | NOR | LEC"
+- If total laps is unknown, use just the current lap: "Lap 12 | Leading: VER | NOR | LEC"
+- If lap data is unavailable, omit the lap prefix: "Leading: VER | NOR | LEC"
+- Use exactly this format for the standings part: "P1_ACR | P2_ACR | P3_ACR"
+- If position data is unavailable for the window, omit the sign-off line entirely
 """
 )
 
@@ -177,10 +179,12 @@ summary of what happened in this 60-second window of the Grand Prix.
 - If nothing notable happened, keep it brief ("The field holds position through a quiet minute...")
 
 ## Sign-off
-- Always end with a standings line using acronyms from the positions data:
-  "Leading: VER | NOR | LEC"
-- Use exactly this format: "Leading: P1_ACR | P2_ACR | P3_ACR"
-- If position data is unavailable for the window, omit the sign-off line
+- Always end with a standings line. If lap_progress data is available, prepend it:
+  "Lap 32/53 | Leading: VER | NOR | LEC"
+- If total laps is unknown, use just the current lap: "Lap 32 | Leading: VER | NOR | LEC"
+- If lap data is unavailable, omit the lap prefix: "Leading: VER | NOR | LEC"
+- Use exactly this format for the standings part: "P1_ACR | P2_ACR | P3_ACR"
+- If position data is unavailable for the window, omit the sign-off line entirely
 """
 )
 

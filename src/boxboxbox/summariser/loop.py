@@ -10,11 +10,23 @@ from sqlalchemy import func, select
 
 from boxboxbox.db import SessionFactory
 from boxboxbox.ingestion.client import OpenF1Client
+from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.models import RaceEvent, Session, Summary, SummaryType
 from boxboxbox.summariser.embeddings import EmbeddingClient
 from boxboxbox.summariser.prompt import build_prompt, check_session_started
 
 logger = logging.getLogger(__name__)
+
+
+async def _fetch_total_laps(client: OpenF1Client, session_key: int) -> int | None:
+    """Fetch total race laps from the P1 session result."""
+    try:
+        results = await client.get("/session_result", params={"session_key": session_key, "position": 1})
+        if results:
+            return results[0].get("number_of_laps")
+    except Exception:
+        logger.debug("Could not fetch total laps for session %d", session_key)
+    return None
 
 
 class SummarisationLoop:
@@ -44,6 +56,7 @@ class SummarisationLoop:
         self._last_window_end: datetime | None = None
         self._no_events_since: datetime | None = None
         self._session_started_at: datetime | None = None
+        self._total_laps: int | None = None
 
     async def run(self) -> None:
         """Run the summarisation loop until the session ends."""
@@ -79,6 +92,10 @@ class SummarisationLoop:
             self._session_started_at = await check_session_started(self._client, self._session_key)
         session_started = self._session_started_at is not None
 
+        # Fetch total laps for race-type sessions (cached after first success).
+        if self._total_laps is None and not is_non_race_session(self._session_type):
+            self._total_laps = await _fetch_total_laps(self._client, self._session_key)
+
         async with self._session_factory() as db:
             previous_summary = await self._get_previous_summary(db)
 
@@ -90,6 +107,7 @@ class SummarisationLoop:
                 previous_summary,
                 self._session_type,
                 session_started=session_started,
+                total_laps=self._total_laps,
             )
 
             if prompt is None:
@@ -196,6 +214,7 @@ async def generate_historical_summaries(
 ) -> None:
     """Generate all summaries for a finished session in batch."""
     session_started_at = await check_session_started(client, session_key)
+    total_laps = await _fetch_total_laps(client, session_key) if not is_non_race_session(session_type) else None
 
     async with session_factory() as db:
         result = await db.execute(
@@ -298,6 +317,7 @@ async def generate_historical_summaries(
                 previous_summary,
                 session_type,
                 session_started=session_started,
+                total_laps=total_laps,
             )
 
             if prompt is None and not session_started:
