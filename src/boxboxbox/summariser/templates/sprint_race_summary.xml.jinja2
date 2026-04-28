@@ -1,11 +1,11 @@
-<race_window from="{{ window_start }}" to="{{ window_end }}" session_type="{{ session_type }}"{% if qualifying_phase %} qualifying_phase="{{ qualifying_phase }}"{% endif %}>
+<sprint_race_window from="{{ window_start }}" to="{{ window_end }}" session_type="{{ session_type }}">
 
 <previous_summary>
 {{ previous_summary | default("This is the first summary window of the session.") }}
 </previous_summary>
 
 {% if no_significant_data %}
-<note>No significant events or lap times were recorded during this window. Do not invent or hallucinate events. State briefly that the session is quiet or drivers are on out-laps/installation laps.</note>
+<note>No significant events or lap times were recorded during this window. Do not invent or hallucinate events. State briefly that the field holds position or the race is quiet.</note>
 {% endif %}
 
 {% if race_control %}
@@ -40,39 +40,6 @@
 </positions>
 {% endif %}
 
-{% if standings %}
-<standings description="Current standings based on fastest lap time so far in this session">
-{% for s in standings %}
-  <driver position="{{ s.position }}" name="{{ s.driver }}" best_lap="{{ s.best_lap | lap_time }}"{% if s.gap and s.gap > 0 %} gap="+{{ s.gap | lap_time }}"{% endif %}{% if s.eliminated %} status="eliminated_{{ s.eliminated }}"{% endif %} />
-{% endfor %}
-</standings>
-{% endif %}
-
-{% if qualifying_eliminations %}
-{% if qualifying_eliminations.q1 %}
-<eliminated_after_q1 description="Q1 has just ended. These drivers were eliminated and will not advance to Q2.">
-{% for d in qualifying_eliminations.q1 %}
-  <driver name="{{ d.driver }}" q1_time="{{ d.q1_time | lap_time }}" />
-{% endfor %}
-</eliminated_after_q1>
-{% endif %}
-{% if qualifying_eliminations.q2 %}
-<eliminated_after_q2 description="Q2 has just ended. These drivers were eliminated and will not advance to Q3.">
-{% for d in qualifying_eliminations.q2 %}
-  <driver name="{{ d.driver }}" q2_time="{{ d.q2_time | lap_time }}" />
-{% endfor %}
-</eliminated_after_q2>
-{% endif %}
-{% endif %}
-
-{% if qualifying_top10 %}
-<qualifying_final_top10 description="Q3 has just ended. These are the top 10 drivers who will form the front of the starting grid.">
-{% for d in qualifying_top10 %}
-  <driver position="{{ d.position }}" name="{{ d.driver }}" q3_time="{{ d.q3_time | lap_time }}" />
-{% endfor %}
-</qualifying_final_top10>
-{% endif %}
-
 {% if intervals %}
 <intervals time="{{ intervals.time }}">
 {% for i in intervals.gaps %}
@@ -82,7 +49,7 @@
 {% endif %}
 
 {% if lap_times %}
-<lap_times description="Individual laps completed during this window (not necessarily fastest laps)">
+<lap_times description="Individual laps completed during this window">
 {% for e in lap_times %}
   <lap driver="{{ e.driver }}" number="{{ e.lap_number }}" duration="{{ e.duration | lap_time }}" />
 {% endfor %}
@@ -103,4 +70,4 @@
 </tyre_stints>
 {% endif %}
 
-</race_window>
+</sprint_race_window>

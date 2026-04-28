@@ -1,0 +1,73 @@
+<race_window from="{{ window_start }}" to="{{ window_end }}" session_type="{{ session_type }}">
+
+<previous_summary>
+{{ previous_summary | default("This is the first summary window of the session.") }}
+</previous_summary>
+
+{% if no_significant_data %}
+<note>No significant events or lap times were recorded during this window. Do not invent or hallucinate events. State briefly that the field holds position through a quiet spell.</note>
+{% endif %}
+
+{% if race_control %}
+<race_control>
+{% for e in race_control %}
+  <event time="{{ e.time }}"{% if e.lap %} lap="{{ e.lap }}"{% endif %}{% if e.driver %} driver="{{ e.driver }}"{% endif %}>{{ e.message }}</event>
+{% endfor %}
+</race_control>
+{% endif %}
+
+{% if overtakes %}
+<overtakes>
+{% for e in overtakes %}
+  <event time="{{ e.time }}" position="P{{ e.position }}">{{ e.overtaking_driver }} overtook {{ e.overtaken_driver }} for P{{ e.position }}</event>
+{% endfor %}
+</overtakes>
+{% endif %}
+
+{% if pit_stops %}
+<pit_stops>
+{% for e in pit_stops %}
+  <event time="{{ e.time }}" driver="{{ e.driver }}" lap="{{ e.lap }}">Pit stop: {{ e.stop_duration }}s stationary, {{ e.pit_duration }}s total</event>
+{% endfor %}
+</pit_stops>
+{% endif %}
+
+{% if positions %}
+<positions time="{{ positions.time }}">
+{% for p in positions.standings %}
+  P{{ p.position }}: {{ p.driver }}
+{% endfor %}
+</positions>
+{% endif %}
+
+{% if intervals %}
+<intervals time="{{ intervals.time }}">
+{% for i in intervals.gaps %}
+  <gap driver="{{ i.driver }}">gap_to_leader={{ i.gap_to_leader }} interval={{ i.interval }}</gap>
+{% endfor %}
+</intervals>
+{% endif %}
+
+{% if lap_times %}
+<lap_times description="Individual laps completed during this window">
+{% for e in lap_times %}
+  <lap driver="{{ e.driver }}" number="{{ e.lap_number }}" duration="{{ e.duration | lap_time }}" />
+{% endfor %}
+</lap_times>
+{% endif %}
+
+{% if weather %}
+<weather time="{{ weather.time }}">
+  Air {{ weather.air_temperature }}C, Track {{ weather.track_temperature }}C, Humidity {{ weather.humidity }}%, Wind {{ weather.wind_speed }} km/h dir {{ weather.wind_direction }}deg, Rainfall: {{ "Yes" if weather.rainfall else "No" }}
+</weather>
+{% endif %}
+
+{% if stints %}
+<tyre_stints>
+{% for e in stints %}
+  <stint driver="{{ e.driver }}" stint="{{ e.stint_number }}" compound="{{ e.compound }}" lap_start="{{ e.lap_start }}" lap_end="{{ e.lap_end }}" tyre_age="{{ e.tyre_age }}" />
+{% endfor %}
+</tyre_stints>
+{% endif %}
+
+</race_window>

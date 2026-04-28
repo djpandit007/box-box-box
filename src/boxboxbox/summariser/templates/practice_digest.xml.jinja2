@@ -1,0 +1,18 @@
+<practice_summaries session="{{ session_name }}" circuit="{{ circuit }}" session_type="{{ session_type }}">
+{% if final_standings %}
+<final_standings>
+{% for r in final_standings %}
+  {% if r.position %}
+  <result position="{{ r.position }}" driver="{{ r.driver }}"{% if r.duration is not none %} best_lap="{{ r.duration | lap_time }}"{% endif %}{% if r.gap_to_leader and r.gap_to_leader != 0 %} gap_to_leader="{{ r.gap_to_leader }}"{% endif %} />
+  {% endif %}
+{% endfor %}
+</final_standings>
+{% endif %}
+{% for s in summaries %}
+<summary window="{{ s.window_start }}-{{ s.window_end }}">
+{{ s.text }}
+</summary>
+{% endfor %}
+</practice_summaries>
+
+Produce the post-session audio digest as a Lead/Analyst dialogue following the format in your instructions. Start directly with "Lead: [tag]" — no preamble.

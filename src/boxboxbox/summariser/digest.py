@@ -12,6 +12,7 @@ from boxboxbox.audio.tts import generate_audio
 from boxboxbox.config import settings
 from boxboxbox.db import SessionFactory
 from boxboxbox.models import Driver, RaceEvent, Session, Summary, SummaryType
+from boxboxbox.summariser.agent import _template_key
 from boxboxbox.summariser.embeddings import EmbeddingClient
 from boxboxbox.summariser.prompt import _format_lap_time
 
@@ -152,11 +153,13 @@ def _build_digest_prompt(
     qualifying_eliminations: dict[str, list[dict]] | None = None,
 ) -> str:
     """Render the digest prompt template with all race summaries."""
-    template = _jinja_env.get_template("digest_prompt.xml.jinja2")
+    session_type = session.session_type if session else "Race"
+    key = _template_key(session_type)
+    template = _jinja_env.get_template(f"{key}_digest.xml.jinja2")
     return template.render(
         session_name=session.session_name if session else "Unknown",
         circuit=session.circuit_short_name if session else "Unknown",
-        session_type=session.session_type if session else "Race",
+        session_type=session_type,
         final_standings=final_standings or [],
         qualifying_eliminations=qualifying_eliminations,
         summaries=[

@@ -1,0 +1,49 @@
+<practice_window from="{{ window_start }}" to="{{ window_end }}" session_type="{{ session_type }}">
+
+<previous_summary>
+{{ previous_summary | default("This is the first summary window of the session.") }}
+</previous_summary>
+
+{% if no_significant_data %}
+<note>No significant events or lap times were recorded during this window. Do not invent or hallucinate events. State briefly that the session is quiet or drivers are on out-laps/installation laps.</note>
+{% endif %}
+
+{% if race_control %}
+<race_control>
+{% for e in race_control %}
+  <event time="{{ e.time }}"{% if e.lap %} lap="{{ e.lap }}"{% endif %}{% if e.driver %} driver="{{ e.driver }}"{% endif %}>{{ e.message }}</event>
+{% endfor %}
+</race_control>
+{% endif %}
+
+{% if standings %}
+<standings description="Current standings based on fastest lap time so far in this session">
+{% for s in standings %}
+  <driver position="{{ s.position }}" name="{{ s.driver }}" best_lap="{{ s.best_lap | lap_time }}"{% if s.gap and s.gap > 0 %} gap="+{{ s.gap | lap_time }}"{% endif %} />
+{% endfor %}
+</standings>
+{% endif %}
+
+{% if lap_times %}
+<lap_times description="Individual laps completed during this window (not necessarily fastest laps)">
+{% for e in lap_times %}
+  <lap driver="{{ e.driver }}" number="{{ e.lap_number }}" duration="{{ e.duration | lap_time }}" />
+{% endfor %}
+</lap_times>
+{% endif %}
+
+{% if weather %}
+<weather time="{{ weather.time }}">
+  Air {{ weather.air_temperature }}C, Track {{ weather.track_temperature }}C, Humidity {{ weather.humidity }}%, Wind {{ weather.wind_speed }} km/h dir {{ weather.wind_direction }}deg, Rainfall: {{ "Yes" if weather.rainfall else "No" }}
+</weather>
+{% endif %}
+
+{% if stints %}
+<tyre_stints>
+{% for e in stints %}
+  <stint driver="{{ e.driver }}" stint="{{ e.stint_number }}" compound="{{ e.compound }}" lap_start="{{ e.lap_start }}" lap_end="{{ e.lap_end }}" tyre_age="{{ e.tyre_age }}" />
+{% endfor %}
+</tyre_stints>
+{% endif %}
+
+</practice_window>

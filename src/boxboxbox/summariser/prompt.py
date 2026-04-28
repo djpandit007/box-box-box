@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.models import Driver, RaceEvent
+from boxboxbox.summariser.agent import _template_key
 
 _TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
 _jinja_env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), keep_trailing_newline=True)
@@ -69,7 +70,8 @@ async def build_prompt(
         session_results=session_results,
         qualifying_phase=qualifying_phase,
     )
-    template = _jinja_env.get_template("summary_prompt.xml.jinja2")
+    key = _template_key(session_type)
+    template = _jinja_env.get_template(f"{key}_summary.xml.jinja2")
     return template.render(context)
 
 
