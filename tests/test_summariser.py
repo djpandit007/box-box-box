@@ -7,6 +7,24 @@ from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.summariser.loop import SummarisationLoop, generate_historical_summaries
 from boxboxbox.summariser.prompt import SessionStatus
 
+# Patch context helpers globally so tests don't need extra DB side-effects.
+_patch_weekend = patch(
+    "boxboxbox.summariser.loop.fetch_same_weekend_context",
+    new_callable=AsyncMock,
+    return_value={},
+)
+_patch_similar = patch(
+    "boxboxbox.summariser.loop.fetch_similar_past_summaries",
+    new_callable=AsyncMock,
+    return_value=[],
+)
+
+
+@pytest.fixture(autouse=True)
+def _mock_context_helpers():
+    with _patch_weekend, _patch_similar:
+        yield
+
 
 def _make_stream_result(text: str):
     """Create a mock that works as `async with agent.run_stream() as result`."""
@@ -190,20 +208,25 @@ class TestSessionEndDetection:
     ):
         mock_build_prompt.return_value = None
 
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        # Result for _get_previous_summary — no previous summary.
+        prev_result = MagicMock()
+        prev_result.scalar_one_or_none.return_value = None
 
-        session = AsyncMock()
-        session.__aenter__ = AsyncMock(return_value=session)
-        session.__aexit__ = AsyncMock(return_value=False)
-        session.execute = AsyncMock(return_value=mock_result)
+        call_count = 0
 
         def make_session():
-            earliest_result = MagicMock()
-            earliest_result.scalar_one_or_none.return_value = datetime(2026, 3, 15, 6, 0, tzinfo=UTC)
+            nonlocal call_count
+            call_count += 1
             cm = AsyncMock()
             inner = AsyncMock()
-            inner.execute = AsyncMock(side_effect=[earliest_result, mock_result])
+            if call_count == 1:
+                # First call: _earliest_event_date
+                earliest_result = MagicMock()
+                earliest_result.scalar_one_or_none.return_value = datetime(2026, 3, 15, 6, 0, tzinfo=UTC)
+                inner.execute = AsyncMock(return_value=earliest_result)
+            else:
+                # Subsequent calls: summarise_once main body (_get_previous_summary)
+                inner.execute = AsyncMock(return_value=prev_result)
             cm.__aenter__ = AsyncMock(return_value=inner)
             cm.__aexit__ = AsyncMock(return_value=False)
             return cm
@@ -238,22 +261,25 @@ class TestWindowContinuity:
     async def test_windows_are_contiguous(self, mock_build_prompt, _mock_check, mock_agent, mock_embedding_client):
         mock_build_prompt.return_value = "<race_window>test</race_window>"
 
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        # Result for _get_previous_summary — no previous summary.
+        prev_result = MagicMock()
+        prev_result.scalar_one_or_none.return_value = None
 
-        session = AsyncMock()
-        session.__aenter__ = AsyncMock(return_value=session)
-        session.__aexit__ = AsyncMock(return_value=False)
-        session.execute = AsyncMock(return_value=mock_result)
-        session.add = MagicMock()
-        session.commit = AsyncMock()
+        call_count = 0
 
         def make_session():
+            nonlocal call_count
+            call_count += 1
             cm = AsyncMock()
             inner = AsyncMock()
-            earliest_result = MagicMock()
-            earliest_result.scalar_one_or_none.return_value = datetime(2026, 3, 15, 6, 0, tzinfo=UTC)
-            inner.execute = AsyncMock(return_value=earliest_result)
+            if call_count == 1:
+                # First call: _earliest_event_date
+                earliest_result = MagicMock()
+                earliest_result.scalar_one_or_none.return_value = datetime(2026, 3, 15, 6, 0, tzinfo=UTC)
+                inner.execute = AsyncMock(return_value=earliest_result)
+            else:
+                # Subsequent calls: summarise_once main body (_get_previous_summary)
+                inner.execute = AsyncMock(return_value=prev_result)
             inner.add = MagicMock()
             inner.commit = AsyncMock()
             cm.__aenter__ = AsyncMock(return_value=inner)

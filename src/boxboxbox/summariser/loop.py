@@ -12,6 +12,7 @@ from boxboxbox.db import SessionFactory
 from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.models import RaceEvent, Session, Summary, SummaryType
+from boxboxbox.summariser.context import fetch_same_weekend_context, fetch_similar_past_summaries
 from boxboxbox.summariser.embeddings import EmbeddingClient
 from boxboxbox.summariser.prompt import build_prompt, check_session_status
 
@@ -59,6 +60,7 @@ class SummarisationLoop:
         self._session_started_at: datetime | None = None
         self._session_finished_at: datetime | None = None
         self._total_laps: int | None = None
+        self._weekend_context: dict[str, str] | None = None
 
     async def run(self) -> None:
         """Run the summarisation loop until the session ends."""
@@ -103,7 +105,21 @@ class SummarisationLoop:
             self._total_laps = await _fetch_total_laps(self._client, self._session_key)
 
         async with self._session_factory() as db:
-            previous_summary = await self._get_previous_summary(db)
+            previous = await self._get_previous_summary(db)
+            previous_summary = previous.summary_text if previous else None
+
+            # Fetch same-weekend context once and cache.
+            if self._weekend_context is None:
+                self._weekend_context = await fetch_same_weekend_context(db, self._session_key)
+
+            # Fetch similar past summaries using previous summary's embedding.
+            historical: list[dict] = []
+            if previous is not None and previous.embedding is not None:
+                historical = await fetch_similar_past_summaries(
+                    db,
+                    embedding=list(previous.embedding),
+                    exclude_session_key=self._session_key,
+                )
 
             prompt = await build_prompt(
                 db,
@@ -115,6 +131,8 @@ class SummarisationLoop:
                 session_started=session_started,
                 session_finished=session_finished,
                 total_laps=self._total_laps,
+                weekend_context=self._weekend_context or None,
+                historical_summaries=historical or None,
             )
 
             if prompt is None:
@@ -216,11 +234,14 @@ class SummarisationLoop:
             )
             return events_result.scalar_one_or_none()
 
-    async def _get_previous_summary(self, db) -> str | None:
-        """Fetch the most recent summary text for narrative continuity."""
+    async def _get_previous_summary(self, db) -> Summary | None:
+        """Fetch the most recent summary for narrative continuity and embedding reuse."""
         result = await db.execute(
-            select(Summary.summary_text)
-            .where(Summary.session_key == self._session_key)
+            select(Summary)
+            .where(
+                Summary.session_key == self._session_key,
+                Summary.summary_type == SummaryType.window,
+            )
             .order_by(Summary.window_end.desc())
             .limit(1)
         )
@@ -260,6 +281,8 @@ async def generate_historical_summaries(
             if race_start > earliest:
                 earliest = race_start
 
+        weekend_context = await fetch_same_weekend_context(db, session_key)
+
         # Load any existing window summaries so we can display them and resume generation.
         existing_result = await db.execute(
             select(Summary)
@@ -294,6 +317,7 @@ async def generate_historical_summaries(
         last = existing_summaries[-1]
         window_start = last.window_end
         previous_summary: str | None = last.summary_text
+        previous_obj: Summary | None = last
         if window_start >= latest:
             logger.info(
                 "All windows already summarised up to %s; nothing new to generate.", latest.strftime("%H:%M:%S")
@@ -302,6 +326,7 @@ async def generate_historical_summaries(
     else:
         window_start = earliest
         previous_summary = None
+        previous_obj = None
     window_num = len(existing_summaries)
 
     while window_start < latest:
@@ -321,6 +346,7 @@ async def generate_historical_summaries(
             )
             print(existing.summary_text, end="\n\n", flush=True)
             previous_summary = existing.summary_text
+            previous_obj = existing
             window_start = window_end
             continue
 
@@ -336,6 +362,14 @@ async def generate_historical_summaries(
         session_finished = session_finished_at is not None and window_start >= session_finished_at
 
         async with session_factory() as db:
+            historical: list[dict] = []
+            if previous_obj is not None and previous_obj.embedding is not None:
+                historical = await fetch_similar_past_summaries(
+                    db,
+                    embedding=list(previous_obj.embedding),
+                    exclude_session_key=session_key,
+                )
+
             prompt = await build_prompt(
                 db,
                 session_key,
@@ -346,6 +380,8 @@ async def generate_historical_summaries(
                 session_started=session_started,
                 session_finished=session_finished,
                 total_laps=total_laps,
+                weekend_context=weekend_context or None,
+                historical_summaries=historical or None,
             )
 
             if prompt is None and not session_started:
@@ -362,6 +398,7 @@ async def generate_historical_summaries(
                 db.add(summary)
                 await db.commit()
                 previous_summary = canned
+                previous_obj = None
                 existing_by_start[window_start] = summary
                 logger.info("[%s - %s] %s", window_start.strftime("%H:%M:%S"), window_end.strftime("%H:%M:%S"), canned)
             elif prompt is None and session_finished:
@@ -378,6 +415,7 @@ async def generate_historical_summaries(
                 db.add(summary)
                 await db.commit()
                 previous_summary = canned
+                previous_obj = None
                 existing_by_start[window_start] = summary
                 logger.info("[%s - %s] %s", window_start.strftime("%H:%M:%S"), window_end.strftime("%H:%M:%S"), canned)
             elif prompt is not None:
@@ -406,6 +444,7 @@ async def generate_historical_summaries(
                     await db.commit()
 
                     previous_summary = summary_text
+                    previous_obj = summary
                     existing_by_start[window_start] = summary
                 except Exception:
                     logger.exception("Failed to generate summary for window %d/%d, skipping", window_num, total_windows)
