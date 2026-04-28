@@ -30,7 +30,11 @@ async def fetch_similar_past_summaries(
         span.set_attribute("limit", limit)
         span.set_attribute("max_distance", max_distance)
 
-        distance_expr = Summary.embedding.op("<=>")(embedding)
+        # Ensure embedding is a plain list of Python floats — numpy arrays from
+        # pgvector column loads cause "expected ndim to be 1" errors.
+        embedding = [float(x) for x in embedding]
+
+        distance_expr = Summary.embedding.cosine_distance(embedding)
         stmt = (
             select(Summary, Session)
             .join(Session, Summary.session_key == Session.session_key)
