@@ -26,6 +26,7 @@ OpenF1 has no live commentary text feed. Instead, we **synthesize narrative** fr
 | Text-to-Speech | [ElevenLabs](https://elevenlabs.io) (English dialogue)                               |
 | Frontend       | [htmx](https://htmx.org) + [Alpine.js](https://alpinejs.dev) + Jinja2 templates      |
 | Visualisations | [Pyodide](https://pyodide.org) (Python in WebAssembly) for client-side charts        |
+| Observability  | [Arize Phoenix](https://github.com/Arize-AI/phoenix) (self-hosted)                   |
 | Secrets        | [dotenvx](https://dotenvx.com)                                                       |
 | Web Framework  | [FastAPI](https://fastapi.tiangolo.com) (REST API + WebSocket + htmx HTML fragments) |
 
@@ -37,13 +38,15 @@ box-box-box/
 ├── .env.keys                       # Decryption keys (NEVER commit)
 ├── .github/workflows/ci.yml        # CI: lint, type check, test
 ├── pyproject.toml
-├── docker-compose.yml              # Postgres + pgvector
+├── docker-compose.yml              # Postgres + pgvector + Phoenix + phoenix-db
 ├── alembic.ini
 ├── alembic/                        # Database migrations
 ├── src/boxboxbox/
 │   ├── config.py                   # Settings via pydantic-settings
 │   ├── models.py                   # SQLAlchemy + pgvector models
 │   ├── db.py                       # Async engine & session factory
+│   ├── observability.py            # OTel tracing setup for Phoenix
+│   ├── evals.py                    # LLM evaluators + dataset creation
 │   ├── ingestion/
 │   │   ├── client.py               # OpenF1 API client (rate-limited)
 │   │   ├── poller.py               # Priority-based polling orchestrator
@@ -219,6 +222,40 @@ This creates:
 | `ELEVENLABS_API_KEY`          | ElevenLabs API key (English TTS)                            |
 | `ELEVENLABS_LEAD_VOICE_ID`    | ElevenLabs voice ID for the Lead commentator                |
 | `ELEVENLABS_ANALYST_VOICE_ID` | ElevenLabs voice ID for the Analyst commentator             |
+
+## Observability
+
+The project uses [Arize Phoenix](https://github.com/Arize-AI/phoenix) (self-hosted) for LLM tracing, evaluation, and dataset management.
+
+### Setup
+
+Phoenix starts automatically with `docker compose up`:
+- **UI:** http://localhost:6006
+- **Disable:** Set `PHOENIX_ENABLED=false` in `.env`
+
+### Traces
+
+All PydanticAI agent calls are auto-instrumented. Manual spans cover:
+- `summarise_window` — 60-second summary generation
+- `generate_digest` — post-session digest generation
+- `embed_text` — embedding generation via OpenRouter
+- `fetch_same_weekend_context` — same-GP-weekend context retrieval
+- `fetch_similar_past_summaries` — pgvector similarity search
+- `generate_audio` — ElevenLabs TTS
+
+### Evaluations
+
+Run evaluators against recent traces:
+
+```bash
+python -m boxboxbox.evals
+```
+
+Create a dataset from a session's traces for prompt experimentation:
+
+```bash
+python -m boxboxbox.evals --create-dataset <session_key>
+```
 
 ## Development
 
