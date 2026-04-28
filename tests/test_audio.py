@@ -65,6 +65,7 @@ class TestGenerateAudio:
             ELEVENLABS_API_KEY="",
             ELEVENLABS_LEAD_VOICE_ID="",
             ELEVENLABS_ANALYST_VOICE_ID="",
+            ELEVENLABS_HISTORIAN_VOICE_ID="historian-id",
             AUDIO_DIR=str(tmp_path),
         )
         with patch("boxboxbox.audio.tts.settings", fake_settings):
@@ -78,6 +79,7 @@ class TestGenerateAudio:
             ELEVENLABS_API_KEY="test-key",
             ELEVENLABS_LEAD_VOICE_ID="lead-id",
             ELEVENLABS_ANALYST_VOICE_ID="analyst-id",
+            ELEVENLABS_HISTORIAN_VOICE_ID="historian-id",
             AUDIO_DIR=str(tmp_path),
         )
         fake_audio = b"fake-mp3-bytes"
@@ -92,6 +94,7 @@ class TestGenerateAudio:
         assert call_kwargs.args[1] == "test-key"
         assert call_kwargs.args[2] == "lead-id"
         assert call_kwargs.args[3] == "analyst-id"
+        assert call_kwargs.args[4] == "historian-id"
         assert result is not None
         assert result == str(tmp_path / "digest_99_race.mp3")
         assert pathlib.Path(result).read_bytes() == fake_audio
@@ -103,6 +106,7 @@ class TestGenerateAudio:
             ELEVENLABS_API_KEY="key",
             ELEVENLABS_LEAD_VOICE_ID="l",
             ELEVENLABS_ANALYST_VOICE_ID="a",
+            ELEVENLABS_HISTORIAN_VOICE_ID="historian-id",
             AUDIO_DIR=str(tmp_path),
         )
         with patch("boxboxbox.audio.tts.settings", fake_settings):
@@ -117,3 +121,38 @@ class TestGenerateAudio:
         with patch.dict(os.environ, env, clear=False):
             result = await generate_audio("No valid lines here.", 1)
         assert result is None
+
+
+_DIALOGUE_WITH_HISTORIAN = (
+    "Lead: [dramatic] Verstappen controls from the front.\n"
+    "Analyst: [analytical] The undercut on lap 32 was decisive.\n"
+    "Historian: [analytical] That mirrors what happened in Bahrain.\n"
+    "Lead: [excited] Hamilton storms back from ninth to second!\n"
+)
+
+
+class TestParseDialogueLinesWithHistorian:
+    def test_parses_historian_lines(self):
+        lines = parse_dialogue_lines(_DIALOGUE_WITH_HISTORIAN)
+        assert len(lines) == 4
+        assert lines[2] == ("Historian", "[analytical] That mirrors what happened in Bahrain.")
+
+
+class TestGenerateAudioWithHistorian:
+    @pytest.mark.asyncio
+    async def test_passes_historian_voice_id(self, tmp_path):
+        fake_settings = SimpleNamespace(
+            TTS_LANGUAGE="en",
+            ELEVENLABS_API_KEY="test-key",
+            ELEVENLABS_LEAD_VOICE_ID="lead-id",
+            ELEVENLABS_ANALYST_VOICE_ID="analyst-id",
+            ELEVENLABS_HISTORIAN_VOICE_ID="historian-id",
+            AUDIO_DIR=str(tmp_path),
+        )
+        fake_audio = b"fake-mp3-bytes"
+        with patch("boxboxbox.audio.tts.settings", fake_settings):
+            with patch("boxboxbox.audio.tts.elevenlabs_tts", new=AsyncMock(return_value=fake_audio)) as mock_tts:
+                await generate_audio(_DIALOGUE_WITH_HISTORIAN, 99)
+
+        call_kwargs = mock_tts.call_args
+        assert call_kwargs.args[4] == "historian-id"  # 5th positional arg

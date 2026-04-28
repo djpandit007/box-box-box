@@ -24,6 +24,8 @@ def parse_dialogue_lines(text: str) -> list[tuple[str, str]]:
             lines.append(("Lead", raw[len("Lead: ") :]))
         elif raw.startswith("Analyst: "):
             lines.append(("Analyst", raw[len("Analyst: ") :]))
+        elif raw.startswith("Historian: "):
+            lines.append(("Historian", raw[len("Historian: ") :]))
     return lines
 
 
@@ -51,13 +53,14 @@ async def generate_audio(summary_text: str, session_key: int, session_type: str 
     api_key = settings.ELEVENLABS_API_KEY
     lead_voice_id = settings.ELEVENLABS_LEAD_VOICE_ID
     analyst_voice_id = settings.ELEVENLABS_ANALYST_VOICE_ID
+    historian_voice_id = settings.ELEVENLABS_HISTORIAN_VOICE_ID
 
     if not api_key:
         logger.warning("ELEVENLABS_API_KEY not set — skipping audio generation")
         return None
 
     logger.info("Generating ElevenLabs dialogue audio for session %s", session_key)
-    audio_bytes = await elevenlabs_tts(lines, api_key, lead_voice_id, analyst_voice_id)
+    audio_bytes = await elevenlabs_tts(lines, api_key, lead_voice_id, analyst_voice_id, historian_voice_id)
     slug = session_type.lower().replace(" ", "_")
     file_path = pathlib.Path(audio_dir) / f"digest_{session_key}_{slug}.mp3"
 
