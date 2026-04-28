@@ -8,8 +8,10 @@ from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.models import Driver, RaceEvent
+from boxboxbox.summariser.agent import _template_key
 
 _TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
 _jinja_env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), keep_trailing_newline=True)
@@ -27,6 +29,48 @@ def _format_lap_time(seconds: float | None) -> str:
 _jinja_env.filters["lap_time"] = _format_lap_time
 
 
+class SessionStatus:
+    """Holds the SESSION STARTED and SESSION FINISHED timestamps."""
+
+    def __init__(self, started_at: datetime | None, finished_at: datetime | None):
+        self.started_at = started_at
+        self.finished_at = finished_at
+
+
+async def check_session_status(client: OpenF1Client, session_key: int) -> SessionStatus:
+    """Fetch SESSION STARTED / SESSION FINISHED times via the OpenF1 API."""
+    events = await client.get(
+        "/race_control",
+        params={"session_key": session_key, "category": "SessionStatus"},
+    )
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    for event in events:
+        msg = (event.get("message") or "").upper()
+        if "STARTED" in msg and started_at is None:
+            started_at = datetime.fromisoformat(event["date"]).replace(tzinfo=None)
+        elif "FINISHED" in msg:
+            finished_at = datetime.fromisoformat(event["date"]).replace(tzinfo=None)
+    return SessionStatus(started_at, finished_at)
+
+
+def _has_interesting_pre_session_data(events_by_source: dict[str, list[dict]]) -> bool:
+    """Check if a pre-session window has data worth sending to the LLM.
+
+    Returns True if there are non-SessionStatus race_control events or weather data.
+    """
+    for source, events in events_by_source.items():
+        if source == "weather":
+            return True
+        if source == "race_control":
+            for e in events:
+                if e.get("category") != "SessionStatus":
+                    return True
+        elif events:
+            return True
+    return False
+
+
 async def build_prompt(
     db: AsyncSession,
     session_key: int,
@@ -34,15 +78,33 @@ async def build_prompt(
     window_end: datetime,
     previous_summary: str | None,
     session_type: str = "Race",
+    session_started: bool = True,
+    session_finished: bool = False,
+    total_laps: int | None = None,
+    weekend_context: dict[str, str] | None = None,
+    historical_summaries: list[dict] | None = None,
 ) -> str | None:
     """Build an XML-tagged prompt from race events in [window_start, window_end).
 
-    Returns None if there are no events in the window.
+    Returns None if there are no events in the window (or no interesting
+    pre-session events when ``session_started`` is False).
     """
     events_by_source = await _fetch_events(db, session_key, window_start, window_end)
 
     if not events_by_source:
         return None
+
+    # Pre-session: check if there's anything interesting beyond SessionStatus events.
+    if not session_started:
+        has_interesting = _has_interesting_pre_session_data(events_by_source)
+        if not has_interesting:
+            return None
+
+    # Post-session: same logic — skip LLM for quiet post-session windows.
+    if session_finished:
+        has_interesting = _has_interesting_pre_session_data(events_by_source)
+        if not has_interesting:
+            return None
 
     driver_map = await _fetch_driver_map(db, session_key)
 
@@ -68,8 +130,16 @@ async def build_prompt(
         best_laps=best_laps,
         session_results=session_results,
         qualifying_phase=qualifying_phase,
+        total_laps=total_laps,
+        weekend_context=weekend_context,
+        historical_summaries=historical_summaries,
     )
-    template = _jinja_env.get_template("summary_prompt.xml.jinja2")
+    if not session_started:
+        context["session_not_started"] = True
+    if session_finished:
+        context["session_finished"] = True
+    key = _template_key(session_type)
+    template = _jinja_env.get_template(f"{key}_summary.xml.jinja2")
     return template.render(context)
 
 
@@ -211,6 +281,9 @@ def _build_template_context(
     best_laps: dict[int, float] | None = None,
     session_results: dict[int, dict] | None = None,
     qualifying_phase: int | None = None,
+    total_laps: int | None = None,
+    weekend_context: dict[str, str] | None = None,
+    historical_summaries: list[dict] | None = None,
 ) -> dict:
     """Transform raw DB events into clean template context dicts."""
     phase_labels = {1: "Q1", 2: "Q2", 3: "Q3"}
@@ -220,8 +293,24 @@ def _build_template_context(
         "previous_summary": previous_summary,
         "session_type": session_type,
     }
+    if weekend_context:
+        ctx["weekend_context"] = weekend_context
+    if historical_summaries:
+        ctx["historical_summaries"] = historical_summaries
     if qualifying_phase is not None:
         ctx["qualifying_phase"] = phase_labels.get(qualifying_phase, f"Q{qualifying_phase}")
+
+    # Extract current lap from all events in the window.
+    current_lap: int | None = None
+    for source_events in events_by_source.values():
+        for e in source_events:
+            lap = e.get("lap_number")
+            if lap is not None:
+                current_lap = max(current_lap or 0, lap)
+    if current_lap is not None:
+        ctx["current_lap"] = current_lap
+    if total_laps is not None:
+        ctx["total_laps"] = total_laps
 
     # Check if this window has any meaningful lap data
     has_laps = "laps" in events_by_source and any(e.get("lap_duration") is not None for e in events_by_source["laps"])

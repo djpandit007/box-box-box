@@ -1,13 +1,12 @@
-<race_summaries session="{{ session_name }}" circuit="{{ circuit }}" session_type="{{ session_type }}">
+<qualifying_summaries session="{{ session_name }}" circuit="{{ circuit }}" session_type="{{ session_type }}">
 {% if final_standings %}
 <final_standings>
-<!-- For races: duration = total race time (seconds), gap_to_leader = time behind winner (seconds or e.g. "+1 LAP").
-     For qualifying: duration = [Q1, Q2, Q3] best lap times (seconds, null if eliminated), gap_to_leader = [Q1, Q2, Q3] gap to fastest in that phase (null if eliminated). -->
+<!-- duration = [Q1, Q2, Q3] best lap times (seconds, null if eliminated), gap_to_leader = [Q1, Q2, Q3] gap to fastest in that phase (null if eliminated). -->
 {% for r in final_standings %}
   {% if r.position %}
   <result position="{{ r.position }}" driver="{{ r.driver }}">
     {%- if r.duration is not none %}
-    {%- if r.duration is iterable and r.duration is not string %} duration_q1_q2_q3="{{ r.duration | map('lap_time') | join(', ') }}"{% else %} total_time="{{ r.duration | lap_time }}"{% endif %}
+    {%- if r.duration is iterable and r.duration is not string %} duration_q1_q2_q3="{{ r.duration | map('lap_time') | join(', ') }}"{% else %} best_lap="{{ r.duration | lap_time }}"{% endif %}
     {%- endif %}
     {%- if r.gap_to_leader and r.gap_to_leader != 0 %}
     {%- if r.gap_to_leader is iterable and r.gap_to_leader is not string %} gap_q1_q2_q3="{{ r.gap_to_leader | join(', ') }}"{% else %} gap_to_leader="{{ r.gap_to_leader }}"{% endif %}
@@ -41,11 +40,26 @@
 {% endif %}
 </qualifying_eliminations>
 {% endif %}
+{% if weekend_context %}
+<weekend_context>
+{% for session_type, summary in weekend_context.items() %}
+  <{{ session_type }}>{{ summary }}</{{ session_type }}>
+{% endfor %}
+</weekend_context>
+{% endif %}
+
+{% if historical_summaries %}
+<historical_parallels note="Similar moments from past races. Reference ONLY if genuinely relevant.">
+{% for h in historical_summaries %}
+  <past_moment circuit="{{ h.circuit }}" session="{{ h.session }}">{{ h.text }}</past_moment>
+{% endfor %}
+</historical_parallels>
+{% endif %}
 {% for s in summaries %}
 <summary window="{{ s.window_start }}-{{ s.window_end }}">
 {{ s.text }}
 </summary>
 {% endfor %}
-</race_summaries>
+</qualifying_summaries>
 
-Produce the post-session audio digest as a Lead/Analyst dialogue following the format in your instructions. Start directly with "Lead: [tag]" — no preamble.
+Produce the post-session audio digest as a Lead/Analyst/Historian dialogue following the format in your instructions. Start directly with "Lead: [tag]" — no preamble.

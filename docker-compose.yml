@@ -11,5 +11,26 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
 
+  phoenix:
+    image: arizephoenix/phoenix:version-8.22.1
+    depends_on:
+      - phoenix-db
+    ports:
+      - "6006:6006"
+      - "4317:4317"
+    environment:
+      PHOENIX_SQL_DATABASE_URL: postgresql://phoenix:phoenix@phoenix-db:5432/phoenix
+    restart: unless-stopped
+
+  phoenix-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: phoenix
+      POSTGRES_USER: phoenix
+      POSTGRES_PASSWORD: phoenix
+    volumes:
+      - phoenix-pgdata:/var/lib/postgresql/data
+
 volumes:
   pgdata:
+  phoenix-pgdata:

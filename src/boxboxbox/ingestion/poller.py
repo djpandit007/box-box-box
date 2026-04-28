@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 class Poller:
-    def __init__(self, client: OpenF1Client, session_factory: async_sessionmaker):
+    def __init__(self, client: OpenF1Client, session_factory: async_sessionmaker, session_key: int | None = None):
         self._client = client
         self._session_factory = session_factory
-        self._session_key: str | int = "latest"
+        self._session_key: str | int = session_key if session_key is not None else "latest"
         self._session_response: SessionResponse | None = None
         self._tick = 0
         self._last_dates: dict[str, str] = {}
@@ -63,6 +63,7 @@ class Poller:
         async with self._session_factory() as db:
             stmt = pg_insert(Session).values(
                 session_key=s.session_key,
+                meeting_key=s.meeting_key,
                 session_name=s.session_name,
                 session_type=s.session_type,
                 circuit_short_name=s.circuit_short_name,

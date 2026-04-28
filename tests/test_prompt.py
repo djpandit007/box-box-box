@@ -567,6 +567,95 @@ class TestQualifyingPhaseResults:
         assert "qualifying_top10" not in ctx
 
 
+class TestBuildPromptWithHistoricalContext:
+    @pytest.mark.asyncio
+    async def test_weekend_context_appears_in_prompt(self):
+        """When weekend_context is provided, it renders in the template."""
+        db = AsyncMock()
+        race_event = MagicMock()
+        race_event.source = "race_control"
+        race_event.data = {"message": "GREEN LIGHT", "date": "2026-03-15T14:00:00"}
+
+        events_result = MagicMock()
+        events_result.scalars.return_value.all.return_value = [race_event]
+
+        driver_result = MagicMock()
+        driver_result.scalars.return_value.all.return_value = []
+
+        db.execute = AsyncMock(side_effect=[events_result, driver_result])
+
+        prompt = await build_prompt(
+            db,
+            session_key=1,
+            window_start=datetime(2026, 3, 15, 14, 0),
+            window_end=datetime(2026, 3, 15, 14, 1),
+            previous_summary=None,
+            weekend_context={"Qualifying": "Norris takes pole."},
+        )
+
+        assert prompt is not None
+        assert "<weekend_context>" in prompt
+        assert "Norris takes pole." in prompt
+
+    @pytest.mark.asyncio
+    async def test_historical_summaries_appear_in_prompt(self):
+        """When historical_summaries is provided, it renders in the template."""
+        db = AsyncMock()
+        race_event = MagicMock()
+        race_event.source = "race_control"
+        race_event.data = {"message": "GREEN LIGHT", "date": "2026-03-15T14:00:00"}
+
+        events_result = MagicMock()
+        events_result.scalars.return_value.all.return_value = [race_event]
+
+        driver_result = MagicMock()
+        driver_result.scalars.return_value.all.return_value = []
+
+        db.execute = AsyncMock(side_effect=[events_result, driver_result])
+
+        prompt = await build_prompt(
+            db,
+            session_key=1,
+            window_start=datetime(2026, 3, 15, 14, 0),
+            window_end=datetime(2026, 3, 15, 14, 1),
+            previous_summary=None,
+            historical_summaries=[{"text": "Hamilton undercut in Bahrain.", "circuit": "Bahrain", "session": "Race"}],
+        )
+
+        assert prompt is not None
+        assert "<historical_parallels" in prompt
+        assert "Hamilton undercut in Bahrain." in prompt
+        assert 'circuit="Bahrain"' in prompt
+
+    @pytest.mark.asyncio
+    async def test_no_context_sections_when_not_provided(self):
+        """When no context is provided, templates render without context sections."""
+        db = AsyncMock()
+        race_event = MagicMock()
+        race_event.source = "race_control"
+        race_event.data = {"message": "GREEN LIGHT", "date": "2026-03-15T14:00:00"}
+
+        events_result = MagicMock()
+        events_result.scalars.return_value.all.return_value = [race_event]
+
+        driver_result = MagicMock()
+        driver_result.scalars.return_value.all.return_value = []
+
+        db.execute = AsyncMock(side_effect=[events_result, driver_result])
+
+        prompt = await build_prompt(
+            db,
+            session_key=1,
+            window_start=datetime(2026, 3, 15, 14, 0),
+            window_end=datetime(2026, 3, 15, 14, 1),
+            previous_summary=None,
+        )
+
+        assert prompt is not None
+        assert "<weekend_context>" not in prompt
+        assert "<historical_parallels" not in prompt
+
+
 class TestBuildPrompt:
     @pytest.mark.asyncio
     async def test_returns_none_for_empty_window(self):

@@ -6,6 +6,7 @@ import uvicorn
 from sqlalchemy import func, select
 
 from boxboxbox.config import settings
+from boxboxbox.observability import init_observability, shutdown_observability
 from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.db import get_engine, get_session_factory
 from boxboxbox.delivery.app import WEB_HOST, WEB_PORT, create_app
@@ -240,18 +241,20 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
         await asyncio.sleep(SNAPSHOT_INTERVAL_SECONDS)
 
 
-async def async_main() -> None:
+async def async_main(session_key: int | None = None) -> None:
+    init_observability()
+
     engine = get_engine(settings.DATABASE_URL)
     session_factory = get_session_factory(engine)
     client = OpenF1Client(settings.OPENF1_BASE_URL)
-    poller = Poller(client, session_factory)
+    poller = Poller(client, session_factory, session_key=session_key)
 
     # Initialize poller first to resolve the session key
     await poller.initialize()
 
     # Create summariser components
-    summary_agent = create_summary_agent(settings.SUMMARISER_MODEL)
-    digest_agent = create_digest_agent(settings.DIGEST_MODEL)
+    summary_agent = create_summary_agent(settings.SUMMARISER_MODEL, poller.session_info.session_type)
+    digest_agent = create_digest_agent(settings.DIGEST_MODEL, poller.session_info.session_type)
     embedding_client = EmbeddingClient(
         api_key=settings.OPENROUTER_API_KEY,
         model=settings.EMBEDDING_MODEL,
@@ -322,6 +325,7 @@ async def async_main() -> None:
                     session_factory=session_factory,
                     agent=summary_agent,
                     embedding_client=embedding_client,
+                    client=client,
                     session_key=poller.session_key,
                     session_type=poller.session_info.session_type,
                     interval_seconds=settings.SUMMARY_INTERVAL_SECONDS,
@@ -348,6 +352,7 @@ async def async_main() -> None:
                 session_factory=session_factory,
                 agent=summary_agent,
                 embedding_client=embedding_client,
+                client=client,
                 session_key=poller.session_key,
                 session_type=poller.session_info.session_type,
                 interval_seconds=settings.SUMMARY_INTERVAL_SECONDS,
@@ -385,13 +390,19 @@ async def async_main() -> None:
                 await task
             except asyncio.CancelledError:
                 pass
+        shutdown_observability()
         await embedding_client.close()
         await client.close()
         await engine.dispose()
 
 
 def main() -> None:
-    asyncio.run(async_main())
+    import argparse
+
+    parser = argparse.ArgumentParser(description="box-box-box: live F1 telemetry and summaries")
+    parser.add_argument("--session-key", type=int, default=None, help="OpenF1 session key (default: latest)")
+    args = parser.parse_args()
+    asyncio.run(async_main(session_key=args.session_key))
 
 
 if __name__ == "__main__":

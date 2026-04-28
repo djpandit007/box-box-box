@@ -1,0 +1,65 @@
+<sprint_qualifying_summaries session="{{ session_name }}" circuit="{{ circuit }}" session_type="{{ session_type }}">
+{% if final_standings %}
+<final_standings>
+<!-- duration = [SQ1, SQ2, SQ3] best lap times (seconds, null if eliminated), gap_to_leader = [SQ1, SQ2, SQ3] gap to fastest in that phase (null if eliminated). -->
+{% for r in final_standings %}
+  {% if r.position %}
+  <result position="{{ r.position }}" driver="{{ r.driver }}">
+    {%- if r.duration is not none %}
+    {%- if r.duration is iterable and r.duration is not string %} duration_sq1_sq2_sq3="{{ r.duration | map('lap_time') | join(', ') }}"{% else %} best_lap="{{ r.duration | lap_time }}"{% endif %}
+    {%- endif %}
+    {%- if r.gap_to_leader and r.gap_to_leader != 0 %}
+    {%- if r.gap_to_leader is iterable and r.gap_to_leader is not string %} gap_sq1_sq2_sq3="{{ r.gap_to_leader | join(', ') }}"{% else %} gap_to_leader="{{ r.gap_to_leader }}"{% endif %}
+    {%- endif %}
+  </result>
+  {% elif r.dnf %}
+  <result status="DNF" driver="{{ r.driver }}" />
+  {% elif r.dns %}
+  <result status="DNS" driver="{{ r.driver }}" />
+  {% elif r.dsq %}
+  <result status="DSQ" driver="{{ r.driver }}" />
+  {% endif %}
+{% endfor %}
+</final_standings>
+{% endif %}
+{% if qualifying_eliminations %}
+<qualifying_eliminations description="Drivers eliminated after each sprint qualifying phase — always highlight these in the digest.">
+{% if qualifying_eliminations.q1 %}
+  <eliminated_after_sq1>
+  {% for d in qualifying_eliminations.q1 %}
+    <driver name="{{ d.driver }}" sq1_time="{{ d.q1_time | lap_time }}" />
+  {% endfor %}
+  </eliminated_after_sq1>
+{% endif %}
+{% if qualifying_eliminations.q2 %}
+  <eliminated_after_sq2>
+  {% for d in qualifying_eliminations.q2 %}
+    <driver name="{{ d.driver }}" sq2_time="{{ d.q2_time | lap_time }}" />
+  {% endfor %}
+  </eliminated_after_sq2>
+{% endif %}
+</qualifying_eliminations>
+{% endif %}
+{% if weekend_context %}
+<weekend_context>
+{% for session_type, summary in weekend_context.items() %}
+  <{{ session_type }}>{{ summary }}</{{ session_type }}>
+{% endfor %}
+</weekend_context>
+{% endif %}
+
+{% if historical_summaries %}
+<historical_parallels note="Similar moments from past races. Reference ONLY if genuinely relevant.">
+{% for h in historical_summaries %}
+  <past_moment circuit="{{ h.circuit }}" session="{{ h.session }}">{{ h.text }}</past_moment>
+{% endfor %}
+</historical_parallels>
+{% endif %}
+{% for s in summaries %}
+<summary window="{{ s.window_start }}-{{ s.window_end }}">
+{{ s.text }}
+</summary>
+{% endfor %}
+</sprint_qualifying_summaries>
+
+Produce the post-session audio digest as a Lead/Analyst/Historian dialogue following the format in your instructions. Start directly with "Lead: [tag]" — no preamble.

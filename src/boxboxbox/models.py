@@ -21,6 +21,7 @@ class Session(Base):
     __tablename__ = "sessions"
 
     session_key: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    meeting_key: Mapped[Optional[int]] = mapped_column(nullable=True)
     session_name: Mapped[str] = mapped_column(String(255))
     session_type: Mapped[str] = mapped_column(String(50))
     circuit_short_name: Mapped[str] = mapped_column(String(100))

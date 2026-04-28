@@ -1,0 +1,40 @@
+<race_summaries session="{{ session_name }}" circuit="{{ circuit }}" session_type="{{ session_type }}">
+{% if final_standings %}
+<final_standings>
+<!-- duration = total race time (seconds), gap_to_leader = time behind winner (seconds or e.g. "+1 LAP"). -->
+{% for r in final_standings %}
+  {% if r.position %}
+  <result position="{{ r.position }}" driver="{{ r.driver }}"{% if r.duration is not none %} total_time="{{ r.duration | lap_time }}"{% endif %}{% if r.gap_to_leader and r.gap_to_leader != 0 %} gap_to_leader="{{ r.gap_to_leader }}"{% endif %} />
+  {% elif r.dnf %}
+  <result status="DNF" driver="{{ r.driver }}" />
+  {% elif r.dns %}
+  <result status="DNS" driver="{{ r.driver }}" />
+  {% elif r.dsq %}
+  <result status="DSQ" driver="{{ r.driver }}" />
+  {% endif %}
+{% endfor %}
+</final_standings>
+{% endif %}
+{% if weekend_context %}
+<weekend_context>
+{% for session_type, summary in weekend_context.items() %}
+  <{{ session_type }}>{{ summary }}</{{ session_type }}>
+{% endfor %}
+</weekend_context>
+{% endif %}
+
+{% if historical_summaries %}
+<historical_parallels note="Similar moments from past races. Reference ONLY if genuinely relevant.">
+{% for h in historical_summaries %}
+  <past_moment circuit="{{ h.circuit }}" session="{{ h.session }}">{{ h.text }}</past_moment>
+{% endfor %}
+</historical_parallels>
+{% endif %}
+{% for s in summaries %}
+<summary window="{{ s.window_start }}-{{ s.window_end }}">
+{{ s.text }}
+</summary>
+{% endfor %}
+</race_summaries>
+
+Produce the post-session audio digest as a Lead/Analyst/Historian dialogue following the format in your instructions. Start directly with "Lead: [tag]" — no preamble.

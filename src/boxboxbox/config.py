@@ -19,16 +19,23 @@ class Settings(BaseSettings):
     ELEVENLABS_API_KEY: str = ""
     ELEVENLABS_LEAD_VOICE_ID: str = "bVM5MBBFUy5Uve0cooHn"
     ELEVENLABS_ANALYST_VOICE_ID: str = "56AoDkrOh6qfVPDXZ7Pt"
+    ELEVENLABS_HISTORIAN_VOICE_ID: str = "URgDTjqBVr48zeu6FETI"
+    TAVILY_API_KEY: str = ""
     # App config
     OPENF1_BASE_URL: str = "https://api.openf1.org/v1"
     POLL_INTERVAL_SECONDS: int = 10
     SUMMARY_INTERVAL_SECONDS: int = 60
 
     # Summariser config
-    SUMMARISER_MODEL: str = "groq:moonshotai/kimi-k2-instruct-0905"
-    DIGEST_MODEL: str = "groq:llama-3.3-70b-versatile"
+    SUMMARISER_MODEL: str = "openrouter:openai/gpt-oss-120b:free"
+    DIGEST_MODEL: str = "openrouter:tencent/hy3-preview:free"
     EMBEDDING_MODEL: str = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
     SESSION_END_GRACE_SECONDS: int = 300
+
+    # Observability (Arize Phoenix)
+    PHOENIX_ENABLED: bool = True
+    PHOENIX_ENDPOINT: str = "http://localhost:6006"
+    PHOENIX_PROJECT_NAME: str = "box-box-box"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

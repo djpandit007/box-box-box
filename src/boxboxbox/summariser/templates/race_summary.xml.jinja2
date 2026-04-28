@@ -1,11 +1,35 @@
-<race_window from="{{ window_start }}" to="{{ window_end }}" session_type="{{ session_type }}"{% if qualifying_phase %} qualifying_phase="{{ qualifying_phase }}"{% endif %}>
+<race_window from="{{ window_start }}" to="{{ window_end }}" session_type="{{ session_type }}">
+
+{% if current_lap %}
+<lap_progress>Lap {{ current_lap }}{% if total_laps %} of {{ total_laps }}{% endif %}</lap_progress>
+{% endif %}
 
 <previous_summary>
 {{ previous_summary | default("This is the first summary window of the session.") }}
 </previous_summary>
 
-{% if no_significant_data %}
-<note>No significant events or lap times were recorded during this window. Do not invent or hallucinate events. State briefly that the session is quiet or drivers are on out-laps/installation laps.</note>
+{% if weekend_context %}
+<weekend_context>
+{% for session_type, summary in weekend_context.items() %}
+  <{{ session_type }}>{{ summary }}</{{ session_type }}>
+{% endfor %}
+</weekend_context>
+{% endif %}
+
+{% if historical_summaries %}
+<historical_parallels note="Similar moments from past races. Reference ONLY if genuinely relevant.">
+{% for h in historical_summaries %}
+  <past_moment circuit="{{ h.circuit }}" session="{{ h.session }}">{{ h.text }}</past_moment>
+{% endfor %}
+</historical_parallels>
+{% endif %}
+
+{% if session_not_started %}
+<note>THE SESSION HAS NOT STARTED. There are no cars on track. Do NOT narrate any racing, positions, overtakes, or tyre strategy. Do NOT include a "Leading:" sign-off. Focus on race control messages (delays, schedule changes, flag conditions). Only mention weather if there is a significant change (e.g. rain starting, dramatic temperature shift). If there is nothing notable to report, simply state that the session has not yet started.</note>
+{% elif session_finished %}
+<note>THE SESSION HAS FINISHED. The race is over. Do NOT narrate any ongoing racing, position battles, or tyre strategy. Do NOT include a "Leading:" sign-off. Only report post-race race control messages (penalties, investigations, classifications). If there is nothing notable to report, simply state that the session has ended.</note>
+{% elif no_significant_data %}
+<note>No significant events or lap times were recorded during this window. Do not invent or hallucinate events. State briefly that the field holds position through a quiet spell.</note>
 {% endif %}
 
 {% if race_control %}
@@ -40,39 +64,6 @@
 </positions>
 {% endif %}
 
-{% if standings %}
-<standings description="Current standings based on fastest lap time so far in this session">
-{% for s in standings %}
-  <driver position="{{ s.position }}" name="{{ s.driver }}" best_lap="{{ s.best_lap | lap_time }}"{% if s.gap and s.gap > 0 %} gap="+{{ s.gap | lap_time }}"{% endif %}{% if s.eliminated %} status="eliminated_{{ s.eliminated }}"{% endif %} />
-{% endfor %}
-</standings>
-{% endif %}
-
-{% if qualifying_eliminations %}
-{% if qualifying_eliminations.q1 %}
-<eliminated_after_q1 description="Q1 has just ended. These drivers were eliminated and will not advance to Q2.">
-{% for d in qualifying_eliminations.q1 %}
-  <driver name="{{ d.driver }}" q1_time="{{ d.q1_time | lap_time }}" />
-{% endfor %}
-</eliminated_after_q1>
-{% endif %}
-{% if qualifying_eliminations.q2 %}
-<eliminated_after_q2 description="Q2 has just ended. These drivers were eliminated and will not advance to Q3.">
-{% for d in qualifying_eliminations.q2 %}
-  <driver name="{{ d.driver }}" q2_time="{{ d.q2_time | lap_time }}" />
-{% endfor %}
-</eliminated_after_q2>
-{% endif %}
-{% endif %}
-
-{% if qualifying_top10 %}
-<qualifying_final_top10 description="Q3 has just ended. These are the top 10 drivers who will form the front of the starting grid.">
-{% for d in qualifying_top10 %}
-  <driver position="{{ d.position }}" name="{{ d.driver }}" q3_time="{{ d.q3_time | lap_time }}" />
-{% endfor %}
-</qualifying_final_top10>
-{% endif %}
-
 {% if intervals %}
 <intervals time="{{ intervals.time }}">
 {% for i in intervals.gaps %}
@@ -82,7 +73,7 @@
 {% endif %}
 
 {% if lap_times %}
-<lap_times description="Individual laps completed during this window (not necessarily fastest laps)">
+<lap_times description="Individual laps completed during this window">
 {% for e in lap_times %}
   <lap driver="{{ e.driver }}" number="{{ e.lap_number }}" duration="{{ e.duration | lap_time }}" />
 {% endfor %}

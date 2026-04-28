@@ -118,8 +118,17 @@ class TestGenerateDigest:
         def make_session():
             return factory_cm
 
-        with patch("boxboxbox.summariser.digest.generate_audio", new_callable=AsyncMock) as mock_audio:
+        with (
+            patch("boxboxbox.summariser.digest.generate_audio", new_callable=AsyncMock) as mock_audio,
+            patch("boxboxbox.summariser.digest.fetch_same_weekend_context", new_callable=AsyncMock) as mock_weekend,
+            patch("boxboxbox.summariser.digest.fetch_similar_past_summaries", new_callable=AsyncMock) as mock_similar,
+            patch("boxboxbox.summariser.digest.settings") as mock_settings,
+        ):
+            mock_settings.TAVILY_API_KEY = ""
+            mock_settings.ELEVENLABS_API_KEY = ""
             mock_audio.return_value = None
+            mock_weekend.return_value = {}
+            mock_similar.return_value = []
             result = await generate_digest(make_session, agent, embedding_client, 12345)
 
         assert result == output_text
@@ -127,6 +136,8 @@ class TestGenerateDigest:
         embedding_client.embed.assert_called_once()
         db.add.assert_called_once()
         db.commit.assert_called_once()
+        mock_weekend.assert_called_once_with(db, 12345)
+        mock_similar.assert_called_once()  # Called with last summary's embedding
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_summaries(self):

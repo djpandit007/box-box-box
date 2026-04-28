@@ -12,16 +12,17 @@ async def elevenlabs_tts(
     api_key: str,
     lead_voice_id: str,
     analyst_voice_id: str,
+    historian_voice_id: str,
     speed: float = TTS_SPEED,
 ) -> bytes:
     """
     Call the ElevenLabs Text to Dialogue API.
 
-    lines: list of (speaker, text) where speaker is "Lead" or "Analyst".
+    lines: list of (speaker, text) where speaker is "Lead", "Analyst", or "Historian".
     text already contains ElevenLabs v3 emotional delivery tags, e.g. "[excited] What a race!".
     Returns raw MP3 bytes.
     """
-    voice_map = {"Lead": lead_voice_id, "Analyst": analyst_voice_id}
+    voice_map = {"Lead": lead_voice_id, "Analyst": analyst_voice_id, "Historian": historian_voice_id}
     voice_settings = VoiceSettings(speed=speed, stability=0.3)
     inputs = [DialogueInput(text=text, voice_id=voice_map[speaker]) for speaker, text in lines]
 
