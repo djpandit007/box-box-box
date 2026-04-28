@@ -122,7 +122,10 @@ class TestGenerateDigest:
             patch("boxboxbox.summariser.digest.generate_audio", new_callable=AsyncMock) as mock_audio,
             patch("boxboxbox.summariser.digest.fetch_same_weekend_context", new_callable=AsyncMock) as mock_weekend,
             patch("boxboxbox.summariser.digest.fetch_similar_past_summaries", new_callable=AsyncMock) as mock_similar,
+            patch("boxboxbox.summariser.digest.settings") as mock_settings,
         ):
+            mock_settings.TAVILY_API_KEY = ""
+            mock_settings.ELEVENLABS_API_KEY = ""
             mock_audio.return_value = None
             mock_weekend.return_value = {}
             mock_similar.return_value = []

@@ -3,10 +3,14 @@ from __future__ import annotations
 import logging
 import pathlib
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from jinja2 import Environment, FileSystemLoader
 from pydantic_ai import Agent
 from sqlalchemy import select, text
+
+if TYPE_CHECKING:
+    from boxboxbox.summariser.web_search import DigestDeps
 
 from boxboxbox.audio.tts import generate_audio
 from boxboxbox.config import settings
@@ -27,7 +31,7 @@ _jinja_env.filters["lap_time"] = _format_lap_time
 
 async def generate_digest(
     session_factory: SessionFactory,
-    digest_agent: Agent,
+    digest_agent: Agent[DigestDeps, str] | Agent[None, str],
     embedding_client: EmbeddingClient,
     session_key: int,
     session_type: str = "Race",
@@ -133,10 +137,21 @@ async def generate_digest(
             historical_summaries=historical or None,
         )
 
+        # Construct deps if web search is enabled.
+        run_kwargs: dict = {"user_prompt": digest_prompt}
+        if settings.TAVILY_API_KEY and session is not None:
+            from boxboxbox.summariser.web_search import DigestDeps
+
+            run_kwargs["deps"] = DigestDeps(
+                tavily_api_key=settings.TAVILY_API_KEY,
+                circuit_name=session.circuit_short_name,
+                session_name=session.session_name,
+            )
+
         logger.info("#" * 60)
         logger.info("POST-RACE DIGEST")
         logger.info("#" * 60)
-        async with digest_agent.run_stream(user_prompt=digest_prompt) as agent_result:
+        async with digest_agent.run_stream(**run_kwargs) as agent_result:
             async for chunk in agent_result.stream_text(delta=True):
                 print(chunk, end="", flush=True)
             digest_text = await agent_result.get_output()

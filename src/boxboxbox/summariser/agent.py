@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
+
+from boxboxbox.config import settings
+
+if TYPE_CHECKING:
+    from boxboxbox.summariser.web_search import DigestDeps
 
 logger = logging.getLogger(__name__)
 
@@ -376,12 +382,45 @@ def create_summary_agent(model: str, session_type: str) -> Agent:
     )
 
 
-def create_digest_agent(model: str, session_type: str) -> Agent:
+_WEB_SEARCH_RULES = """
+
+Web search:
+- You have access to a search tool for F1 news. Use it 1-2 times to find relevant context:
+  driver storylines, championship implications, expert analysis, or pre/post-session reactions.
+- Weave web context naturally into the dialogue — attribute insights to "reports" or "the paddock"
+  rather than citing URLs. Never read out a URL.
+- If the search returns nothing useful, proceed without it. Do not mention that you searched.
+"""
+
+
+def create_digest_agent(model: str, session_type: str) -> Agent[DigestDeps, str] | Agent[None, str]:
     """Create the PydanticAI agent for post-session digest reports."""
     key = _template_key(session_type)
+    system_prompt = _DIGEST_PROMPTS[key]
+
+    if settings.TAVILY_API_KEY:
+        from boxboxbox.summariser.web_search import DigestDeps, search_f1_news
+
+        if "hy3-preview" in model:
+            logger.warning(
+                "TAVILY_API_KEY is set but DIGEST_MODEL (%s) may not support tool-calling. "
+                "Consider setting DIGEST_MODEL to a tool-capable model.",
+                model,
+            )
+
+        logger.info("Registering web search tool on digest agent")
+        return Agent(
+            model,
+            deps_type=DigestDeps,
+            output_type=str,
+            system_prompt=system_prompt + _WEB_SEARCH_RULES,
+            tools=[search_f1_news],
+            model_settings=ModelSettings(temperature=0.7, max_tokens=16_000),
+        )
+
     return Agent(
         model,
         output_type=str,
-        system_prompt=_DIGEST_PROMPTS[key],
+        system_prompt=system_prompt,
         model_settings=ModelSettings(temperature=0.7, max_tokens=16_000),
     )

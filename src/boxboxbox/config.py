@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     ELEVENLABS_LEAD_VOICE_ID: str = "bVM5MBBFUy5Uve0cooHn"
     ELEVENLABS_ANALYST_VOICE_ID: str = "56AoDkrOh6qfVPDXZ7Pt"
     ELEVENLABS_HISTORIAN_VOICE_ID: str = "URgDTjqBVr48zeu6FETI"
+    TAVILY_API_KEY: str = ""
     # App config
     OPENF1_BASE_URL: str = "https://api.openf1.org/v1"
     POLL_INTERVAL_SECONDS: int = 10
