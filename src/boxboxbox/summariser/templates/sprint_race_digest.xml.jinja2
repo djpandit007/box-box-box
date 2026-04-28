@@ -15,6 +15,21 @@
 {% endfor %}
 </final_standings>
 {% endif %}
+{% if weekend_context %}
+<weekend_context>
+{% for session_type, summary in weekend_context.items() %}
+  <{{ session_type }}>{{ summary }}</{{ session_type }}>
+{% endfor %}
+</weekend_context>
+{% endif %}
+
+{% if historical_summaries %}
+<historical_parallels note="Similar moments from past races. Reference ONLY if genuinely relevant.">
+{% for h in historical_summaries %}
+  <past_moment circuit="{{ h.circuit }}" session="{{ h.session }}">{{ h.text }}</past_moment>
+{% endfor %}
+</historical_parallels>
+{% endif %}
 {% for s in summaries %}
 <summary window="{{ s.window_start }}-{{ s.window_end }}">
 {{ s.text }}
