@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.summariser.loop import SummarisationLoop, generate_historical_summaries
 
 
@@ -59,9 +60,14 @@ def mock_session_factory():
 
 class TestSummariseOnce:
     @pytest.mark.asyncio
+    @patch(
+        "boxboxbox.summariser.loop.check_session_started",
+        new_callable=AsyncMock,
+        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+    )
     @patch("boxboxbox.summariser.loop.build_prompt")
     async def test_generates_summary_when_events_exist(
-        self, mock_build_prompt, mock_agent, mock_embedding_client, mock_session_factory
+        self, mock_build_prompt, _mock_check, mock_agent, mock_embedding_client, mock_session_factory
     ):
         mock_build_prompt.return_value = "<race_window>test prompt</race_window>"
 
@@ -104,6 +110,7 @@ class TestSummariseOnce:
             session_factory=make_session,
             agent=mock_agent,
             embedding_client=mock_embedding_client,
+            client=MagicMock(spec=OpenF1Client),
             session_key=12345,
             interval_seconds=60,
             grace_seconds=300,
@@ -118,9 +125,14 @@ class TestSummariseOnce:
         session.commit.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch(
+        "boxboxbox.summariser.loop.check_session_started",
+        new_callable=AsyncMock,
+        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+    )
     @patch("boxboxbox.summariser.loop.build_prompt")
     async def test_skips_when_no_events(
-        self, mock_build_prompt, mock_agent, mock_embedding_client, mock_session_factory
+        self, mock_build_prompt, _mock_check, mock_agent, mock_embedding_client, mock_session_factory
     ):
         mock_build_prompt.return_value = None
 
@@ -153,6 +165,7 @@ class TestSummariseOnce:
             session_factory=make_session,
             agent=mock_agent,
             embedding_client=mock_embedding_client,
+            client=MagicMock(spec=OpenF1Client),
             session_key=12345,
         )
 
@@ -165,8 +178,15 @@ class TestSummariseOnce:
 
 class TestSessionEndDetection:
     @pytest.mark.asyncio
+    @patch(
+        "boxboxbox.summariser.loop.check_session_started",
+        new_callable=AsyncMock,
+        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+    )
     @patch("boxboxbox.summariser.loop.build_prompt")
-    async def test_session_ends_after_grace_period(self, mock_build_prompt, mock_agent, mock_embedding_client):
+    async def test_session_ends_after_grace_period(
+        self, mock_build_prompt, _mock_check, mock_agent, mock_embedding_client
+    ):
         mock_build_prompt.return_value = None
 
         mock_result = MagicMock()
@@ -191,6 +211,7 @@ class TestSessionEndDetection:
             session_factory=make_session,
             agent=mock_agent,
             embedding_client=mock_embedding_client,
+            client=MagicMock(spec=OpenF1Client),
             session_key=12345,
             grace_seconds=10,
         )
@@ -207,8 +228,13 @@ class TestSessionEndDetection:
 
 class TestWindowContinuity:
     @pytest.mark.asyncio
+    @patch(
+        "boxboxbox.summariser.loop.check_session_started",
+        new_callable=AsyncMock,
+        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+    )
     @patch("boxboxbox.summariser.loop.build_prompt")
-    async def test_windows_are_contiguous(self, mock_build_prompt, mock_agent, mock_embedding_client):
+    async def test_windows_are_contiguous(self, mock_build_prompt, _mock_check, mock_agent, mock_embedding_client):
         mock_build_prompt.return_value = "<race_window>test</race_window>"
 
         mock_result = MagicMock()
@@ -237,6 +263,7 @@ class TestWindowContinuity:
             session_factory=make_session,
             agent=mock_agent,
             embedding_client=mock_embedding_client,
+            client=MagicMock(spec=OpenF1Client),
             session_key=12345,
         )
 
@@ -327,11 +354,19 @@ class TestGenerateHistoricalSummariesResume:
             call_count += 1
             return cms[call_count - 1]
 
-        with patch("boxboxbox.summariser.loop.build_prompt", new=AsyncMock(return_value="<race_window/>")):
+        mock_client = MagicMock(spec=OpenF1Client)
+        with (
+            patch("boxboxbox.summariser.loop.build_prompt", new=AsyncMock(return_value="<race_window/>")),
+            patch(
+                "boxboxbox.summariser.loop.check_session_started",
+                new=AsyncMock(return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC)),
+            ),
+        ):
             await generate_historical_summaries(
                 session_factory=make_session,
                 agent=agent,
                 embedding_client=embedding_client,
+                client=mock_client,
                 session_key=12345,
                 interval_seconds=60,
             )
@@ -340,6 +375,7 @@ class TestGenerateHistoricalSummariesResume:
                 session_factory=make_session,
                 agent=agent,
                 embedding_client=embedding_client,
+                client=mock_client,
                 session_key=12345,
                 interval_seconds=60,
             )

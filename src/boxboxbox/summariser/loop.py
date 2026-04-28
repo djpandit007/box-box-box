@@ -9,9 +9,10 @@ from pydantic_ai import Agent
 from sqlalchemy import func, select
 
 from boxboxbox.db import SessionFactory
+from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.models import RaceEvent, Session, Summary, SummaryType
 from boxboxbox.summariser.embeddings import EmbeddingClient
-from boxboxbox.summariser.prompt import build_prompt
+from boxboxbox.summariser.prompt import build_prompt, check_session_started
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class SummarisationLoop:
         session_factory: SessionFactory,
         agent: Agent,
         embedding_client: EmbeddingClient,
+        client: OpenF1Client,
         session_key: int,
         session_type: str = "Race",
         interval_seconds: int = 60,
@@ -33,6 +35,7 @@ class SummarisationLoop:
         self._session_factory = session_factory
         self._agent = agent
         self._embedding_client = embedding_client
+        self._client = client
         self._session_key = session_key
         self._session_type = session_type
         self._interval = interval_seconds
@@ -40,6 +43,7 @@ class SummarisationLoop:
         self._on_summary = on_summary
         self._last_window_end: datetime | None = None
         self._no_events_since: datetime | None = None
+        self._session_started_at: datetime | None = None
 
     async def run(self) -> None:
         """Run the summarisation loop until the session ends."""
@@ -70,18 +74,47 @@ class SummarisationLoop:
         else:
             window_start = self._last_window_end
 
+        # Check session status via API (cached after first detection).
+        if self._session_started_at is None:
+            self._session_started_at = await check_session_started(self._client, self._session_key)
+        session_started = self._session_started_at is not None
+
         async with self._session_factory() as db:
             previous_summary = await self._get_previous_summary(db)
 
             prompt = await build_prompt(
-                db, self._session_key, window_start, window_end, previous_summary, self._session_type
+                db,
+                self._session_key,
+                window_start,
+                window_end,
+                previous_summary,
+                self._session_type,
+                session_started=session_started,
             )
 
             if prompt is None:
-                if self._no_events_since is None:
-                    self._no_events_since = now
-                elif (now - self._no_events_since).total_seconds() > self._grace_seconds:
-                    return True
+                if not session_started:
+                    # Pre-session with no interesting data — store canned text.
+                    summary = Summary(
+                        session_key=self._session_key,
+                        summary_type=SummaryType.window,
+                        window_start=window_start,
+                        window_end=window_end,
+                        prompt_text="[pre-session]",
+                        summary_text="The session has not yet started.",
+                    )
+                    db.add(summary)
+                    await db.commit()
+                    if self._on_summary is not None:
+                        try:
+                            await self._on_summary(summary)
+                        except Exception:
+                            logger.exception("on_summary callback failed; continuing")
+                else:
+                    if self._no_events_since is None:
+                        self._no_events_since = now
+                    elif (now - self._no_events_since).total_seconds() > self._grace_seconds:
+                        return True
                 self._last_window_end = window_end
                 return False
 
@@ -156,11 +189,14 @@ async def generate_historical_summaries(
     session_factory: SessionFactory,
     agent: Agent,
     embedding_client: EmbeddingClient,
+    client: OpenF1Client,
     session_key: int,
     session_type: str = "Race",
     interval_seconds: int = 60,
 ) -> None:
     """Generate all summaries for a finished session in batch."""
+    session_started_at = await check_session_started(client, session_key)
+
     async with session_factory() as db:
         result = await db.execute(
             select(func.min(RaceEvent.event_date), func.max(RaceEvent.event_date)).where(
@@ -251,10 +287,36 @@ async def generate_historical_summaries(
             window_end.strftime("%H:%M:%S"),
         )
 
-        async with session_factory() as db:
-            prompt = await build_prompt(db, session_key, window_start, window_end, previous_summary, session_type)
+        session_started = session_started_at is not None and window_start >= session_started_at
 
-            if prompt is not None:
+        async with session_factory() as db:
+            prompt = await build_prompt(
+                db,
+                session_key,
+                window_start,
+                window_end,
+                previous_summary,
+                session_type,
+                session_started=session_started,
+            )
+
+            if prompt is None and not session_started:
+                # Pre-session with no interesting data — store canned text.
+                canned = "The session has not yet started."
+                summary = Summary(
+                    session_key=session_key,
+                    summary_type=SummaryType.window,
+                    window_start=window_start,
+                    window_end=window_end,
+                    prompt_text="[pre-session]",
+                    summary_text=canned,
+                )
+                db.add(summary)
+                await db.commit()
+                previous_summary = canned
+                existing_by_start[window_start] = summary
+                logger.info("[%s - %s] %s", window_start.strftime("%H:%M:%S"), window_end.strftime("%H:%M:%S"), canned)
+            elif prompt is not None:
                 try:
                     logger.info("=" * 60)
                     logger.info("[%s - %s]", window_start.strftime("%H:%M:%S"), window_end.strftime("%H:%M:%S"))

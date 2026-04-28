@@ -4,6 +4,10 @@
 {{ previous_summary | default("This is the first summary window of the session.") }}
 </previous_summary>
 
+{% if session_not_started %}
+<note>The session has not started yet. Cover only weather conditions, race control messages, or delay information. Do NOT narrate on-track action.</note>
+{% endif %}
+
 {% if no_significant_data %}
 <note>No significant events or lap times were recorded during this window. Do not invent or hallucinate events. State briefly that the session is quiet or drivers are on out-laps/installation laps.</note>
 {% endif %}

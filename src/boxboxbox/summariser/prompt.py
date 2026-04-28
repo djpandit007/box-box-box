@@ -8,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.models import Driver, RaceEvent
 from boxboxbox.summariser.agent import _template_key
@@ -28,6 +29,39 @@ def _format_lap_time(seconds: float | None) -> str:
 _jinja_env.filters["lap_time"] = _format_lap_time
 
 
+async def check_session_started(client: OpenF1Client, session_key: int) -> datetime | None:
+    """Check if SESSION STARTED has occurred via the OpenF1 API.
+
+    Returns the datetime of SESSION STARTED, or None if not yet started.
+    """
+    events = await client.get(
+        "/race_control",
+        params={"session_key": session_key, "category": "SessionStatus"},
+    )
+    for event in events:
+        if "STARTED" in (event.get("message") or "").upper():
+            dt = datetime.fromisoformat(event["date"])
+            return dt.replace(tzinfo=None)
+    return None
+
+
+def _has_interesting_pre_session_data(events_by_source: dict[str, list[dict]]) -> bool:
+    """Check if a pre-session window has data worth sending to the LLM.
+
+    Returns True if there are non-SessionStatus race_control events or weather data.
+    """
+    for source, events in events_by_source.items():
+        if source == "weather":
+            return True
+        if source == "race_control":
+            for e in events:
+                if e.get("category") != "SessionStatus":
+                    return True
+        elif events:
+            return True
+    return False
+
+
 async def build_prompt(
     db: AsyncSession,
     session_key: int,
@@ -35,15 +69,23 @@ async def build_prompt(
     window_end: datetime,
     previous_summary: str | None,
     session_type: str = "Race",
+    session_started: bool = True,
 ) -> str | None:
     """Build an XML-tagged prompt from race events in [window_start, window_end).
 
-    Returns None if there are no events in the window.
+    Returns None if there are no events in the window (or no interesting
+    pre-session events when ``session_started`` is False).
     """
     events_by_source = await _fetch_events(db, session_key, window_start, window_end)
 
     if not events_by_source:
         return None
+
+    # Pre-session: check if there's anything interesting beyond SessionStatus events.
+    if not session_started:
+        has_interesting = _has_interesting_pre_session_data(events_by_source)
+        if not has_interesting:
+            return None
 
     driver_map = await _fetch_driver_map(db, session_key)
 
@@ -70,6 +112,8 @@ async def build_prompt(
         session_results=session_results,
         qualifying_phase=qualifying_phase,
     )
+    if not session_started:
+        context["session_not_started"] = True
     key = _template_key(session_type)
     template = _jinja_env.get_template(f"{key}_summary.xml.jinja2")
     return template.render(context)

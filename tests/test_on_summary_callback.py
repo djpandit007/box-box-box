@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.summariser.loop import SummarisationLoop
 
 
@@ -58,8 +59,13 @@ def _make_session_factory(earliest: datetime):
 
 class TestOnSummaryCallback:
     @pytest.mark.asyncio
+    @patch(
+        "boxboxbox.summariser.loop.check_session_started",
+        new_callable=AsyncMock,
+        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+    )
     @patch("boxboxbox.summariser.loop.build_prompt")
-    async def test_callback_fired_after_commit(self, mock_build_prompt):
+    async def test_callback_fired_after_commit(self, mock_build_prompt, _mock_check):
         mock_build_prompt.return_value = "<race_window>test</race_window>"
         agent = AsyncMock()
         agent.run_stream = MagicMock(return_value=_make_stream_result("Some summary text."))
@@ -73,6 +79,7 @@ class TestOnSummaryCallback:
             session_factory=factory,
             agent=agent,
             embedding_client=embedding_client,
+            client=MagicMock(spec=OpenF1Client),
             session_key=12345,
             on_summary=callback,
         )
@@ -87,8 +94,13 @@ class TestOnSummaryCallback:
         assert summary_arg.summary_text == "Some summary text."
 
     @pytest.mark.asyncio
+    @patch(
+        "boxboxbox.summariser.loop.check_session_started",
+        new_callable=AsyncMock,
+        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+    )
     @patch("boxboxbox.summariser.loop.build_prompt")
-    async def test_callback_exception_does_not_break_loop(self, mock_build_prompt):
+    async def test_callback_exception_does_not_break_loop(self, mock_build_prompt, _mock_check):
         mock_build_prompt.return_value = "<race_window>test</race_window>"
         agent = AsyncMock()
         agent.run_stream = MagicMock(return_value=_make_stream_result("Text."))
@@ -102,6 +114,7 @@ class TestOnSummaryCallback:
             session_factory=factory,
             agent=agent,
             embedding_client=embedding_client,
+            client=MagicMock(spec=OpenF1Client),
             session_key=12345,
             on_summary=failing_callback,
         )
@@ -112,8 +125,13 @@ class TestOnSummaryCallback:
         failing_callback.assert_awaited_once()
 
     @pytest.mark.asyncio
+    @patch(
+        "boxboxbox.summariser.loop.check_session_started",
+        new_callable=AsyncMock,
+        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+    )
     @patch("boxboxbox.summariser.loop.build_prompt")
-    async def test_no_callback_is_noop(self, mock_build_prompt):
+    async def test_no_callback_is_noop(self, mock_build_prompt, _mock_check):
         mock_build_prompt.return_value = "<race_window>test</race_window>"
         agent = AsyncMock()
         agent.run_stream = MagicMock(return_value=_make_stream_result("Text."))
@@ -126,6 +144,7 @@ class TestOnSummaryCallback:
             session_factory=factory,
             agent=agent,
             embedding_client=embedding_client,
+            client=MagicMock(spec=OpenF1Client),
             session_key=12345,
             on_summary=None,
         )
