@@ -34,7 +34,7 @@ async def fetch_similar_past_summaries(
         # pgvector column loads cause "expected ndim to be 1" errors.
         embedding = [float(x) for x in embedding]
 
-        distance_expr = Summary.embedding.op("<=>")(embedding)
+        distance_expr = Summary.embedding.cosine_distance(embedding)
         stmt = (
             select(Summary, Session)
             .join(Session, Summary.session_key == Session.session_key)
