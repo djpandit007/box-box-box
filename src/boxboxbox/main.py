@@ -241,13 +241,13 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
         await asyncio.sleep(SNAPSHOT_INTERVAL_SECONDS)
 
 
-async def async_main() -> None:
+async def async_main(session_key: int | None = None) -> None:
     init_observability()
 
     engine = get_engine(settings.DATABASE_URL)
     session_factory = get_session_factory(engine)
     client = OpenF1Client(settings.OPENF1_BASE_URL)
-    poller = Poller(client, session_factory)
+    poller = Poller(client, session_factory, session_key=session_key)
 
     # Initialize poller first to resolve the session key
     await poller.initialize()
@@ -397,7 +397,12 @@ async def async_main() -> None:
 
 
 def main() -> None:
-    asyncio.run(async_main())
+    import argparse
+
+    parser = argparse.ArgumentParser(description="box-box-box: live F1 telemetry and summaries")
+    parser.add_argument("--session-key", type=int, default=None, help="OpenF1 session key (default: latest)")
+    args = parser.parse_args()
+    asyncio.run(async_main(session_key=args.session_key))
 
 
 if __name__ == "__main__":
