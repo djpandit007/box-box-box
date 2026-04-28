@@ -6,6 +6,7 @@ import uvicorn
 from sqlalchemy import func, select
 
 from boxboxbox.config import settings
+from boxboxbox.observability import init_observability, shutdown_observability
 from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.db import get_engine, get_session_factory
 from boxboxbox.delivery.app import WEB_HOST, WEB_PORT, create_app
@@ -241,6 +242,8 @@ async def _push_snapshots(session_factory, manager: ConnectionManager, session_k
 
 
 async def async_main() -> None:
+    init_observability()
+
     engine = get_engine(settings.DATABASE_URL)
     session_factory = get_session_factory(engine)
     client = OpenF1Client(settings.OPENF1_BASE_URL)
@@ -387,6 +390,7 @@ async def async_main() -> None:
                 await task
             except asyncio.CancelledError:
                 pass
+        shutdown_observability()
         await embedding_client.close()
         await client.close()
         await engine.dispose()
