@@ -4,6 +4,8 @@ import logging
 
 import httpx
 
+from boxboxbox.observability import tracer
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,13 +22,16 @@ class EmbeddingClient:
 
     async def embed(self, text: str) -> list[float]:
         """Generate an embedding vector for the given text."""
-        resp = await self._client.post(
-            "/embeddings",
-            json={"model": self._model, "input": text},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["data"][0]["embedding"]
+        with tracer.start_as_current_span("embed_text") as span:
+            span.set_attribute("input.value", text[:500])
+            span.set_attribute("embedding.model_name", self._model)
+            resp = await self._client.post(
+                "/embeddings",
+                json={"model": self._model, "input": text},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["data"][0]["embedding"]
 
     async def close(self) -> None:
         await self._client.aclose()

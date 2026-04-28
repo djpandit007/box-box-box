@@ -14,6 +14,7 @@ from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.models import RaceEvent, Session, Summary, SummaryType
 from boxboxbox.summariser.context import fetch_same_weekend_context, fetch_similar_past_summaries
 from boxboxbox.summariser.embeddings import EmbeddingClient
+from boxboxbox.observability import tracer
 from boxboxbox.summariser.prompt import build_prompt, check_session_status
 
 logger = logging.getLogger(__name__)
@@ -105,114 +106,127 @@ class SummarisationLoop:
             self._total_laps = await _fetch_total_laps(self._client, self._session_key)
 
         async with self._session_factory() as db:
-            previous = await self._get_previous_summary(db)
-            previous_summary = previous.summary_text if previous else None
+            with tracer.start_as_current_span("summarise_window") as span:
+                span.set_attribute("session_key", self._session_key)
+                span.set_attribute("session_type", self._session_type)
+                span.set_attribute("window_start", window_start.isoformat())
+                span.set_attribute("window_end", window_end.isoformat())
 
-            # Fetch same-weekend context once and cache.
-            if self._weekend_context is None:
-                self._weekend_context = await fetch_same_weekend_context(db, self._session_key)
+                previous = await self._get_previous_summary(db)
+                previous_summary = previous.summary_text if previous else None
 
-            # Fetch similar past summaries using previous summary's embedding.
-            historical: list[dict] = []
-            if previous is not None and previous.embedding is not None:
-                historical = await fetch_similar_past_summaries(
+                # Fetch same-weekend context once and cache.
+                if self._weekend_context is None:
+                    self._weekend_context = await fetch_same_weekend_context(db, self._session_key)
+
+                # Fetch similar past summaries using previous summary's embedding.
+                historical: list[dict] = []
+                if previous is not None and previous.embedding is not None:
+                    historical = await fetch_similar_past_summaries(
+                        db,
+                        embedding=list(previous.embedding),
+                        exclude_session_key=self._session_key,
+                    )
+
+                prompt = await build_prompt(
                     db,
-                    embedding=list(previous.embedding),
-                    exclude_session_key=self._session_key,
+                    self._session_key,
+                    window_start,
+                    window_end,
+                    previous_summary,
+                    self._session_type,
+                    session_started=session_started,
+                    session_finished=session_finished,
+                    total_laps=self._total_laps,
+                    weekend_context=self._weekend_context or None,
+                    historical_summaries=historical or None,
                 )
 
-            prompt = await build_prompt(
-                db,
-                self._session_key,
-                window_start,
-                window_end,
-                previous_summary,
-                self._session_type,
-                session_started=session_started,
-                session_finished=session_finished,
-                total_laps=self._total_laps,
-                weekend_context=self._weekend_context or None,
-                historical_summaries=historical or None,
-            )
+                if prompt is None:
+                    span.set_attribute("input.value", "[no-events]")
+                    if not session_started:
+                        # Pre-session with no interesting data — store canned text.
+                        summary = Summary(
+                            session_key=self._session_key,
+                            summary_type=SummaryType.window,
+                            window_start=window_start,
+                            window_end=window_end,
+                            prompt_text="[pre-session]",
+                            summary_text="The session has not yet started.",
+                        )
+                        db.add(summary)
+                        await db.commit()
+                        span.set_attribute("output.value", summary.summary_text)
+                        if self._on_summary is not None:
+                            try:
+                                await self._on_summary(summary)
+                            except Exception:
+                                logger.exception("on_summary callback failed; continuing")
+                    elif session_finished:
+                        # Post-session with no interesting data — store canned text.
+                        summary = Summary(
+                            session_key=self._session_key,
+                            summary_type=SummaryType.window,
+                            window_start=window_start,
+                            window_end=window_end,
+                            prompt_text="[post-session]",
+                            summary_text="The session has ended.",
+                        )
+                        db.add(summary)
+                        await db.commit()
+                        span.set_attribute("output.value", summary.summary_text)
+                        if self._on_summary is not None:
+                            try:
+                                await self._on_summary(summary)
+                            except Exception:
+                                logger.exception("on_summary callback failed; continuing")
+                    else:
+                        if self._no_events_since is None:
+                            self._no_events_since = now
+                        elif (now - self._no_events_since).total_seconds() > self._grace_seconds:
+                            return True
+                    self._last_window_end = window_end
+                    return False
 
-            if prompt is None:
-                if not session_started:
-                    # Pre-session with no interesting data — store canned text.
+                self._no_events_since = None
+                span.set_attribute("input.value", prompt[:500])
+
+                try:
+                    logger.info("=" * 60)
+                    logger.info("[%s - %s]", window_start.strftime("%H:%M:%S"), window_end.strftime("%H:%M:%S"))
+                    async with self._agent.run_stream(user_prompt=prompt) as result:
+                        async for text in result.stream_text(delta=True):
+                            print(text, end="", flush=True)
+                        summary_text = await result.get_output()
+                    print()  # newline after streamed tokens
+                    logger.info("=" * 60)
+
+                    logger.info("Summary: %s", summary_text[:120])
+                    span.set_attribute("output.value", summary_text[:1000])
+
+                    embedding = await self._embedding_client.embed(summary_text)
+
                     summary = Summary(
                         session_key=self._session_key,
                         summary_type=SummaryType.window,
                         window_start=window_start,
                         window_end=window_end,
-                        prompt_text="[pre-session]",
-                        summary_text="The session has not yet started.",
+                        prompt_text=prompt,
+                        summary_text=summary_text,
+                        embedding=embedding,
                     )
                     db.add(summary)
                     await db.commit()
+
                     if self._on_summary is not None:
                         try:
                             await self._on_summary(summary)
                         except Exception:
                             logger.exception("on_summary callback failed; continuing")
-                elif session_finished:
-                    # Post-session with no interesting data — store canned text.
-                    summary = Summary(
-                        session_key=self._session_key,
-                        summary_type=SummaryType.window,
-                        window_start=window_start,
-                        window_end=window_end,
-                        prompt_text="[post-session]",
-                        summary_text="The session has ended.",
+                except Exception:
+                    logger.exception(
+                        "Failed to generate summary for window %s - %s, skipping", window_start, window_end
                     )
-                    db.add(summary)
-                    await db.commit()
-                    if self._on_summary is not None:
-                        try:
-                            await self._on_summary(summary)
-                        except Exception:
-                            logger.exception("on_summary callback failed; continuing")
-                else:
-                    if self._no_events_since is None:
-                        self._no_events_since = now
-                    elif (now - self._no_events_since).total_seconds() > self._grace_seconds:
-                        return True
-                self._last_window_end = window_end
-                return False
-
-            self._no_events_since = None
-
-            try:
-                logger.info("=" * 60)
-                logger.info("[%s - %s]", window_start.strftime("%H:%M:%S"), window_end.strftime("%H:%M:%S"))
-                async with self._agent.run_stream(user_prompt=prompt) as result:
-                    async for text in result.stream_text(delta=True):
-                        print(text, end="", flush=True)
-                    summary_text = await result.get_output()
-                print()  # newline after streamed tokens
-                logger.info("=" * 60)
-
-                logger.info("Summary: %s", summary_text[:120])
-
-                embedding = await self._embedding_client.embed(summary_text)
-
-                summary = Summary(
-                    session_key=self._session_key,
-                    summary_type=SummaryType.window,
-                    window_start=window_start,
-                    window_end=window_end,
-                    prompt_text=prompt,
-                    summary_text=summary_text,
-                    embedding=embedding,
-                )
-                db.add(summary)
-                await db.commit()
-
-                if self._on_summary is not None:
-                    try:
-                        await self._on_summary(summary)
-                    except Exception:
-                        logger.exception("on_summary callback failed; continuing")
-            except Exception:
-                logger.exception("Failed to generate summary for window %s - %s, skipping", window_start, window_end)
 
         self._last_window_end = window_end
         return False
