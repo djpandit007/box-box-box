@@ -13,7 +13,7 @@ from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.ingestion.endpoints import is_non_race_session
 from boxboxbox.models import RaceEvent, Session, Summary, SummaryType
 from boxboxbox.summariser.embeddings import EmbeddingClient
-from boxboxbox.summariser.prompt import build_prompt, check_session_started
+from boxboxbox.summariser.prompt import build_prompt, check_session_status
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,9 @@ class SummarisationLoop:
         self._on_summary = on_summary
         self._last_window_end: datetime | None = None
         self._no_events_since: datetime | None = None
+        self._session_status_checked = False
         self._session_started_at: datetime | None = None
+        self._session_finished_at: datetime | None = None
         self._total_laps: int | None = None
 
     async def run(self) -> None:
@@ -87,10 +89,14 @@ class SummarisationLoop:
         else:
             window_start = self._last_window_end
 
-        # Check session status via API (cached after first detection).
-        if self._session_started_at is None:
-            self._session_started_at = await check_session_started(self._client, self._session_key)
+        # Check session status via API (re-check until both start and finish are known).
+        if not self._session_status_checked or (self._session_finished_at is None):
+            status = await check_session_status(self._client, self._session_key)
+            self._session_started_at = status.started_at
+            self._session_finished_at = status.finished_at
+            self._session_status_checked = True
         session_started = self._session_started_at is not None
+        session_finished = self._session_finished_at is not None and window_start >= self._session_finished_at
 
         # Fetch total laps for race-type sessions (cached after first success).
         if self._total_laps is None and not is_non_race_session(self._session_type):
@@ -107,6 +113,7 @@ class SummarisationLoop:
                 previous_summary,
                 self._session_type,
                 session_started=session_started,
+                session_finished=session_finished,
                 total_laps=self._total_laps,
             )
 
@@ -120,6 +127,23 @@ class SummarisationLoop:
                         window_end=window_end,
                         prompt_text="[pre-session]",
                         summary_text="The session has not yet started.",
+                    )
+                    db.add(summary)
+                    await db.commit()
+                    if self._on_summary is not None:
+                        try:
+                            await self._on_summary(summary)
+                        except Exception:
+                            logger.exception("on_summary callback failed; continuing")
+                elif session_finished:
+                    # Post-session with no interesting data — store canned text.
+                    summary = Summary(
+                        session_key=self._session_key,
+                        summary_type=SummaryType.window,
+                        window_start=window_start,
+                        window_end=window_end,
+                        prompt_text="[post-session]",
+                        summary_text="The session has ended.",
                     )
                     db.add(summary)
                     await db.commit()
@@ -213,7 +237,9 @@ async def generate_historical_summaries(
     interval_seconds: int = 60,
 ) -> None:
     """Generate all summaries for a finished session in batch."""
-    session_started_at = await check_session_started(client, session_key)
+    status = await check_session_status(client, session_key)
+    session_started_at = status.started_at
+    session_finished_at = status.finished_at
     total_laps = await _fetch_total_laps(client, session_key) if not is_non_race_session(session_type) else None
 
     async with session_factory() as db:
@@ -307,6 +333,7 @@ async def generate_historical_summaries(
         )
 
         session_started = session_started_at is not None and window_start >= session_started_at
+        session_finished = session_finished_at is not None and window_start >= session_finished_at
 
         async with session_factory() as db:
             prompt = await build_prompt(
@@ -317,6 +344,7 @@ async def generate_historical_summaries(
                 previous_summary,
                 session_type,
                 session_started=session_started,
+                session_finished=session_finished,
                 total_laps=total_laps,
             )
 
@@ -329,6 +357,22 @@ async def generate_historical_summaries(
                     window_start=window_start,
                     window_end=window_end,
                     prompt_text="[pre-session]",
+                    summary_text=canned,
+                )
+                db.add(summary)
+                await db.commit()
+                previous_summary = canned
+                existing_by_start[window_start] = summary
+                logger.info("[%s - %s] %s", window_start.strftime("%H:%M:%S"), window_end.strftime("%H:%M:%S"), canned)
+            elif prompt is None and session_finished:
+                # Post-session with no interesting data — store canned text.
+                canned = "The session has ended."
+                summary = Summary(
+                    session_key=session_key,
+                    summary_type=SummaryType.window,
+                    window_start=window_start,
+                    window_end=window_end,
+                    prompt_text="[post-session]",
                     summary_text=canned,
                 )
                 db.add(summary)

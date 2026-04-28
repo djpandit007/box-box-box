@@ -29,20 +29,29 @@ def _format_lap_time(seconds: float | None) -> str:
 _jinja_env.filters["lap_time"] = _format_lap_time
 
 
-async def check_session_started(client: OpenF1Client, session_key: int) -> datetime | None:
-    """Check if SESSION STARTED has occurred via the OpenF1 API.
+class SessionStatus:
+    """Holds the SESSION STARTED and SESSION FINISHED timestamps."""
 
-    Returns the datetime of SESSION STARTED, or None if not yet started.
-    """
+    def __init__(self, started_at: datetime | None, finished_at: datetime | None):
+        self.started_at = started_at
+        self.finished_at = finished_at
+
+
+async def check_session_status(client: OpenF1Client, session_key: int) -> SessionStatus:
+    """Fetch SESSION STARTED / SESSION FINISHED times via the OpenF1 API."""
     events = await client.get(
         "/race_control",
         params={"session_key": session_key, "category": "SessionStatus"},
     )
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
     for event in events:
-        if "STARTED" in (event.get("message") or "").upper():
-            dt = datetime.fromisoformat(event["date"])
-            return dt.replace(tzinfo=None)
-    return None
+        msg = (event.get("message") or "").upper()
+        if "STARTED" in msg and started_at is None:
+            started_at = datetime.fromisoformat(event["date"]).replace(tzinfo=None)
+        elif "FINISHED" in msg:
+            finished_at = datetime.fromisoformat(event["date"]).replace(tzinfo=None)
+    return SessionStatus(started_at, finished_at)
 
 
 def _has_interesting_pre_session_data(events_by_source: dict[str, list[dict]]) -> bool:
@@ -70,6 +79,7 @@ async def build_prompt(
     previous_summary: str | None,
     session_type: str = "Race",
     session_started: bool = True,
+    session_finished: bool = False,
     total_laps: int | None = None,
 ) -> str | None:
     """Build an XML-tagged prompt from race events in [window_start, window_end).
@@ -84,6 +94,12 @@ async def build_prompt(
 
     # Pre-session: check if there's anything interesting beyond SessionStatus events.
     if not session_started:
+        has_interesting = _has_interesting_pre_session_data(events_by_source)
+        if not has_interesting:
+            return None
+
+    # Post-session: same logic — skip LLM for quiet post-session windows.
+    if session_finished:
         has_interesting = _has_interesting_pre_session_data(events_by_source)
         if not has_interesting:
             return None
@@ -116,6 +132,8 @@ async def build_prompt(
     )
     if not session_started:
         context["session_not_started"] = True
+    if session_finished:
+        context["session_finished"] = True
     key = _template_key(session_type)
     template = _jinja_env.get_template(f"{key}_summary.xml.jinja2")
     return template.render(context)

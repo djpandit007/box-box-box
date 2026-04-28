@@ -10,6 +10,8 @@
 
 {% if session_not_started %}
 <note>THE SESSION HAS NOT STARTED. There are no cars on track. Do NOT narrate any racing, positions, overtakes, or tyre strategy. Do NOT include a "Leading:" sign-off. Focus on race control messages (delays, schedule changes, flag conditions). Only mention weather if there is a significant change (e.g. rain starting, dramatic temperature shift). If there is nothing notable to report, simply state that the session has not yet started.</note>
+{% elif session_finished %}
+<note>THE SESSION HAS FINISHED. The race is over. Do NOT narrate any ongoing racing, position battles, or tyre strategy. Do NOT include a "Leading:" sign-off. Only report post-race race control messages (penalties, investigations, classifications). If there is nothing notable to report, simply state that the session has ended.</note>
 {% elif no_significant_data %}
 <note>No significant events or lap times were recorded during this window. Do not invent or hallucinate events. State briefly that the field holds position or the race is quiet.</note>
 {% endif %}

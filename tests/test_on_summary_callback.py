@@ -7,6 +7,7 @@ import pytest
 
 from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.summariser.loop import SummarisationLoop
+from boxboxbox.summariser.prompt import SessionStatus
 
 
 def _make_stream_result(text: str):
@@ -60,9 +61,9 @@ def _make_session_factory(earliest: datetime):
 class TestOnSummaryCallback:
     @pytest.mark.asyncio
     @patch(
-        "boxboxbox.summariser.loop.check_session_started",
+        "boxboxbox.summariser.loop.check_session_status",
         new_callable=AsyncMock,
-        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+        return_value=SessionStatus(datetime(2026, 3, 15, 6, 0, tzinfo=UTC), None),
     )
     @patch("boxboxbox.summariser.loop.build_prompt")
     async def test_callback_fired_after_commit(self, mock_build_prompt, _mock_check):
@@ -95,9 +96,9 @@ class TestOnSummaryCallback:
 
     @pytest.mark.asyncio
     @patch(
-        "boxboxbox.summariser.loop.check_session_started",
+        "boxboxbox.summariser.loop.check_session_status",
         new_callable=AsyncMock,
-        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+        return_value=SessionStatus(datetime(2026, 3, 15, 6, 0, tzinfo=UTC), None),
     )
     @patch("boxboxbox.summariser.loop.build_prompt")
     async def test_callback_exception_does_not_break_loop(self, mock_build_prompt, _mock_check):
@@ -126,9 +127,9 @@ class TestOnSummaryCallback:
 
     @pytest.mark.asyncio
     @patch(
-        "boxboxbox.summariser.loop.check_session_started",
+        "boxboxbox.summariser.loop.check_session_status",
         new_callable=AsyncMock,
-        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+        return_value=SessionStatus(datetime(2026, 3, 15, 6, 0, tzinfo=UTC), None),
     )
     @patch("boxboxbox.summariser.loop.build_prompt")
     async def test_no_callback_is_noop(self, mock_build_prompt, _mock_check):

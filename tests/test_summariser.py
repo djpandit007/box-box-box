@@ -5,6 +5,7 @@ import pytest
 
 from boxboxbox.ingestion.client import OpenF1Client
 from boxboxbox.summariser.loop import SummarisationLoop, generate_historical_summaries
+from boxboxbox.summariser.prompt import SessionStatus
 
 
 def _make_stream_result(text: str):
@@ -61,9 +62,9 @@ def mock_session_factory():
 class TestSummariseOnce:
     @pytest.mark.asyncio
     @patch(
-        "boxboxbox.summariser.loop.check_session_started",
+        "boxboxbox.summariser.loop.check_session_status",
         new_callable=AsyncMock,
-        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+        return_value=SessionStatus(datetime(2026, 3, 15, 6, 0, tzinfo=UTC), None),
     )
     @patch("boxboxbox.summariser.loop.build_prompt")
     async def test_generates_summary_when_events_exist(
@@ -126,9 +127,9 @@ class TestSummariseOnce:
 
     @pytest.mark.asyncio
     @patch(
-        "boxboxbox.summariser.loop.check_session_started",
+        "boxboxbox.summariser.loop.check_session_status",
         new_callable=AsyncMock,
-        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+        return_value=SessionStatus(datetime(2026, 3, 15, 6, 0, tzinfo=UTC), None),
     )
     @patch("boxboxbox.summariser.loop.build_prompt")
     async def test_skips_when_no_events(
@@ -179,9 +180,9 @@ class TestSummariseOnce:
 class TestSessionEndDetection:
     @pytest.mark.asyncio
     @patch(
-        "boxboxbox.summariser.loop.check_session_started",
+        "boxboxbox.summariser.loop.check_session_status",
         new_callable=AsyncMock,
-        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+        return_value=SessionStatus(datetime(2026, 3, 15, 6, 0, tzinfo=UTC), None),
     )
     @patch("boxboxbox.summariser.loop.build_prompt")
     async def test_session_ends_after_grace_period(
@@ -229,9 +230,9 @@ class TestSessionEndDetection:
 class TestWindowContinuity:
     @pytest.mark.asyncio
     @patch(
-        "boxboxbox.summariser.loop.check_session_started",
+        "boxboxbox.summariser.loop.check_session_status",
         new_callable=AsyncMock,
-        return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC),
+        return_value=SessionStatus(datetime(2026, 3, 15, 6, 0, tzinfo=UTC), None),
     )
     @patch("boxboxbox.summariser.loop.build_prompt")
     async def test_windows_are_contiguous(self, mock_build_prompt, _mock_check, mock_agent, mock_embedding_client):
@@ -358,8 +359,8 @@ class TestGenerateHistoricalSummariesResume:
         with (
             patch("boxboxbox.summariser.loop.build_prompt", new=AsyncMock(return_value="<race_window/>")),
             patch(
-                "boxboxbox.summariser.loop.check_session_started",
-                new=AsyncMock(return_value=datetime(2026, 3, 15, 6, 0, tzinfo=UTC)),
+                "boxboxbox.summariser.loop.check_session_status",
+                new=AsyncMock(return_value=SessionStatus(datetime(2026, 3, 15, 6, 0, tzinfo=UTC), None)),
             ),
         ):
             await generate_historical_summaries(
