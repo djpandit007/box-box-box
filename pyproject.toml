@@ -19,6 +19,8 @@ dependencies = [
     "greenlet>=3.0",
     "elevenlabs>=2.0",
     "tavily-python>=0.5",
+    "arize-phoenix-evals>=3.0.0",
+    "arize-phoenix-client>=2.5.0",
 ]
 
 [dependency-groups]
