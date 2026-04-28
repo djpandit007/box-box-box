@@ -13,6 +13,7 @@ from boxboxbox.config import settings
 from boxboxbox.db import SessionFactory
 from boxboxbox.models import Driver, RaceEvent, Session, Summary, SummaryType
 from boxboxbox.summariser.agent import _template_key
+from boxboxbox.summariser.context import fetch_same_weekend_context, fetch_similar_past_summaries
 from boxboxbox.summariser.embeddings import EmbeddingClient
 from boxboxbox.summariser.prompt import _format_lap_time
 
@@ -109,7 +110,28 @@ async def generate_digest(
             elif dur[1] is not None and dur[2] is None:
                 qualifying_eliminations.setdefault("q2", []).append({"driver": r["driver"], "q2_time": dur[1]})
 
-        digest_prompt = _build_digest_prompt(summaries, session, final_standings, qualifying_eliminations or None)
+        # Fetch historical context.
+        weekend_context = await fetch_same_weekend_context(db, session_key)
+
+        # Use the last window summary's embedding for past-race similarity search.
+        last_summary = summaries[-1] if summaries else None
+        historical: list[dict] = []
+        if last_summary is not None and last_summary.embedding is not None:
+            historical = await fetch_similar_past_summaries(
+                db,
+                embedding=list(last_summary.embedding),
+                exclude_session_key=session_key,
+                limit=5,
+            )
+
+        digest_prompt = _build_digest_prompt(
+            summaries,
+            session,
+            final_standings,
+            qualifying_eliminations or None,
+            weekend_context=weekend_context or None,
+            historical_summaries=historical or None,
+        )
 
         logger.info("#" * 60)
         logger.info("POST-RACE DIGEST")
@@ -151,6 +173,8 @@ def _build_digest_prompt(
     session: Session | None,
     final_standings: list[dict] | None = None,
     qualifying_eliminations: dict[str, list[dict]] | None = None,
+    weekend_context: dict[str, str] | None = None,
+    historical_summaries: list[dict] | None = None,
 ) -> str:
     """Render the digest prompt template with all race summaries."""
     session_type = session.session_type if session else "Race"
@@ -162,6 +186,8 @@ def _build_digest_prompt(
         session_type=session_type,
         final_standings=final_standings or [],
         qualifying_eliminations=qualifying_eliminations,
+        weekend_context=weekend_context,
+        historical_summaries=historical_summaries,
         summaries=[
             {
                 "window_start": s.window_start.strftime("%H:%M:%S"),
